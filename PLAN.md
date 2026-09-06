@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`gway-wireguard` will initially be a **private** repository and will provide a small, auditable mechanism for giving deployed Gway-family boxes a stable Internet identity such as:
+`gway-wireguard` is a public, independently auditable repository that will provide a small mechanism for giving deployed Gway-family boxes a stable Internet identity such as:
 
 ```text
 gway-004.arthexis.com
@@ -138,23 +138,12 @@ gway-wireguard/
 │       └── gway-wireguard.service
 ├── server/
 │   ├── install.sh
-│   ├── app/
-│   │   ├── api.py
-│   │   ├── registry.py
-│   │   ├── wireguard.py
-│   │   ├── proxy.py
-│   │   └── dns/
-│   │       ├── base.py
-│   │       └── godaddy.py
-│   └── systemd/
+│   ├── enroll-api/
+│   ├── peer-manager/
+│   ├── dns/
+│   └── proxy/
 ├── tests/
-│   ├── client/
-│   ├── server/
-│   └── integration/
 └── docs/
-    ├── enrollment.md
-    ├── security.md
-    └── operations.md
 ```
 
 `install.sh` at repository root is the primary user-facing entry point for a deployed box.
