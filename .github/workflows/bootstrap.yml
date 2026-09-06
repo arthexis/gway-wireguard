@@ -1,4 +1,4 @@
-name: Bootstrap CI
+name: CI
 
 on:
   push:
@@ -20,6 +20,15 @@ jobs:
           bash -n client/manual-setup.sh server/manual-setup.sh
           bash -n tests/client/test-install.sh tests/client/test-cleanup-regression.sh
 
+      - name: Validate Python syntax
+        run: |
+          python3 -m py_compile \
+            client/enroll.py \
+            server/registry.py \
+            server/peer_manager.py \
+            server/enroll_api.py \
+            server/admin.py
+
       - name: Validate version format
         run: grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' VERSION
 
@@ -31,18 +40,26 @@ jobs:
           test -s VERSION
           test -s docs/phase-1.md
           test -s docs/phase-2.md
+          test -s docs/phase-3.md
+          test -s server/systemd/gway-wireguard-enroll.service
 
-      - name: Verify manual helpers expose non-mutating help
-        run: |
-          ./client/manual-setup.sh --help >/dev/null
-          ./server/manual-setup.sh --help >/dev/null
-
-      - name: Test Phase 2 client installer validation
+      - name: Test client validation
         run: |
           ./tests/client/test-install.sh
           bash ./tests/client/test-cleanup-regression.sh
+          python3 -m unittest discover -s tests/client -p 'test_*.py' -v
 
-      - name: Verify future installers remain disabled
+      - name: Test enrollment server
         run: |
-          ! ./uninstall.sh
-          ! ./server/install.sh
+          ./server/install.sh --check
+          python3 -m unittest discover -s tests/server -p 'test_*.py' -v
+
+      - name: Verify administrative help paths
+        run: |
+          ./client/manual-setup.sh --help >/dev/null
+          ./server/manual-setup.sh --help >/dev/null
+          python3 client/enroll.py --help >/dev/null
+          python3 server/admin.py --help >/dev/null
+
+      - name: Verify future client uninstall remains disabled
+        run: "! ./uninstall.sh"
