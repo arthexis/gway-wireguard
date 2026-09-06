@@ -1,0 +1,27 @@
+[Unit]
+Description=gway-wireguard enrollment API
+After=network-online.target wg-quick@gway.service
+Wants=network-online.target wg-quick@gway.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=/etc/gway-wireguard/server.env
+WorkingDirectory=/opt/gway-wireguard/server
+ExecStart=/usr/bin/python3 /opt/gway-wireguard/server/enroll_api.py serve
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/etc/wireguard /var/lib/gway-wireguard
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
