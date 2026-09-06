@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
-# Install or repair the gway-wireguard client.
+# Install, enroll, or repair the gway-wireguard client.
 # Usage:
-#   sudo ./install.sh --prepare [--device gway-004]
-#   sudo ./install.sh --device gway-004 \
-#     --server-public-key '<gateway-public-key>' \
-#     --client-address 10.90.0.4/32
+#   sudo ./install.sh --device gway-004 --token '<one-time-token>'
 #   sudo ./install.sh --status
+#   sudo ./install.sh --prepare [--device gway-004]
 #
-# Phase 2 automates client setup only. Automatic server enrollment is Phase 3.
+# Phase 3 adds authenticated enrollment while retaining the Phase 2 manual
+# configuration path for recovery and staged deployments.
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE_DIR="${STATE_DIR:-/etc/gway-wireguard}"
-WG_INTERFACE="gway"
+WG_INTERFACE="${WG_INTERFACE:-gway}"
 WG_CONFIG="/etc/wireguard/${WG_INTERFACE}.conf"
-DEFAULT_ENDPOINT="54.161.177.151:51820"
-DEFAULT_SERVER_TUNNEL_IP="10.90.0.1/32"
-DEFAULT_KEEPALIVE="25"
+DEFAULT_ENDPOINT="${DEFAULT_ENDPOINT:-54.161.177.151:51820}"
+DEFAULT_SERVER_TUNNEL_IP="${DEFAULT_SERVER_TUNNEL_IP:-10.90.0.1/32}"
+DEFAULT_KEEPALIVE="${DEFAULT_KEEPALIVE:-25}"
+DEFAULT_ENROLL_URL="${GWAY_ENROLL_URL:-https://register.arthexis.com/v1/enroll}"
 
 MODE="install"
 DEVICE_ID=""
@@ -25,12 +26,16 @@ CLIENT_ADDRESS=""
 SERVER_ENDPOINT=""
 SERVER_TUNNEL_IP=""
 KEEPALIVE=""
+PUBLIC_HOSTNAME=""
+ENROLL_URL="${DEFAULT_ENROLL_URL}"
+TOKEN="${GWAY_ENROLL_TOKEN:-}"
+TOKEN_FILE="${GWAY_ENROLL_TOKEN_FILE:-}"
 TMP_CONFIG=""
+TMP_ENROLL=""
 
 cleanup() {
-    if [[ -n "${TMP_CONFIG}" ]]; then
-        rm -f -- "${TMP_CONFIG}"
-    fi
+    [[ -z "${TMP_CONFIG}" ]] || rm -f -- "${TMP_CONFIG}"
+    [[ -z "${TMP_ENROLL}" ]] || rm -f -- "${TMP_ENROLL}"
 }
 trap cleanup EXIT
 
@@ -39,37 +44,46 @@ usage() {
 gway-wireguard client installer
 
 Usage:
-  sudo ./install.sh --prepare [--device DEVICE]
+  sudo ./install.sh --device DEVICE --token TOKEN
   sudo ./install.sh [options]
+  sudo ./install.sh --prepare [--device DEVICE]
   sudo ./install.sh --status
   ./install.sh --check [options]
 
-Modes:
-  --prepare   Install WireGuard, resolve/persist identity, and generate/reuse
-              the device keypair. No peer configuration is applied.
-  --status    Show persisted identity/configuration and WireGuard status.
-  --check     Validate supplied configuration without requiring root or
-              modifying the system.
-
-Install options:
+Fresh enrollment:
   --device DEVICE
+  --token TOKEN                       One-time enrollment token.
+  --token-file PATH                   Read the token from a file.
+  --enroll-url HTTPS_URL              Enrollment endpoint
+                                      (default: https://register.arthexis.com/v1/enroll)
+
+Manual/recovery configuration:
   --server-public-key KEY
   --client-address CIDR
-  --server-endpoint HOST:PORT       (default: 54.161.177.151:51820)
-  --server-tunnel-ip CIDR           (default: 10.90.0.1/32)
-  --keepalive SECONDS               (default: 25)
+  --server-endpoint HOST:PORT         (default: 54.161.177.151:51820)
+  --server-tunnel-ip CIDR             (default: 10.90.0.1/32)
+  --keepalive SECONDS                 (default: 25)
+
+Modes:
+  --prepare   Install dependencies, resolve/persist identity, and generate/reuse
+              the device keypair without enrolling.
+  --status    Show persisted configuration and WireGuard status.
+  --check     Validate supplied configuration without requiring root or
+              modifying the system.
   -h, --help
+
+Token sources:
+  --token takes precedence over GWAY_ENROLL_TOKEN.
+  --token-file takes precedence over GWAY_ENROLL_TOKEN_FILE when explicitly set.
+  Tokens are never persisted by this installer.
 
 Identity precedence:
   1. --device
   2. /etc/gway-wireguard/device-id
   3. current system hostname
 
-On a fresh Phase 2 installation, use --prepare first. Copy the printed device
-public key to the gateway's manual peer configuration, then rerun install.sh
-with the gateway public key and the assigned client address.
-
-Phase 3 will replace this manual key exchange with authenticated enrollment.
+An already configured client reuses its persisted enrollment and does not
+request another VPN address or consume another token.
 EOF
 }
 
@@ -91,7 +105,7 @@ validate_device_id() {
 validate_public_key() {
     local value="$1"
     [[ "${value}" =~ ^[A-Za-z0-9+/]{43}=$ ]] \
-        || die "server public key does not look like a WireGuard public key"
+        || die "public key does not look like a WireGuard public key"
 }
 
 validate_ipv4_cidr() {
@@ -126,6 +140,11 @@ validate_keepalive() {
     (( 10#${value} <= 65535 )) || die "keepalive must be between 0 and 65535"
 }
 
+validate_enroll_url() {
+    [[ "${ENROLL_URL}" =~ ^https://[^[:space:]]+$ ]] \
+        || die "enrollment URL must use HTTPS"
+}
+
 read_state() {
     local name="$1"
     local path="${STATE_DIR}/${name}"
@@ -150,6 +169,7 @@ load_persisted_config() {
     [[ -n "${SERVER_ENDPOINT}" ]] || SERVER_ENDPOINT="$(read_state server-endpoint || true)"
     [[ -n "${SERVER_TUNNEL_IP}" ]] || SERVER_TUNNEL_IP="$(read_state server-tunnel-ip || true)"
     [[ -n "${KEEPALIVE}" ]] || KEEPALIVE="$(read_state keepalive || true)"
+    [[ -n "${PUBLIC_HOSTNAME}" ]] || PUBLIC_HOSTNAME="$(read_state hostname || true)"
 
     SERVER_ENDPOINT="${SERVER_ENDPOINT:-${DEFAULT_ENDPOINT}}"
     SERVER_TUNNEL_IP="${SERVER_TUNNEL_IP:-${DEFAULT_SERVER_TUNNEL_IP}}"
@@ -159,8 +179,8 @@ load_persisted_config() {
 validate_install_config() {
     resolve_device_id
     load_persisted_config
-    [[ -n "${SERVER_PUBLIC_KEY}" ]] || die "missing --server-public-key (run --prepare first on a fresh device)"
-    [[ -n "${CLIENT_ADDRESS}" ]] || die "missing --client-address assigned by the gateway"
+    [[ -n "${SERVER_PUBLIC_KEY}" ]] || die "missing gateway public key or enrollment token"
+    [[ -n "${CLIENT_ADDRESS}" ]] || die "missing client address or enrollment token"
     validate_public_key "${SERVER_PUBLIC_KEY}"
     validate_ipv4_cidr "${CLIENT_ADDRESS}"
     validate_ipv4_cidr "${SERVER_TUNNEL_IP}"
@@ -168,14 +188,16 @@ validate_install_config() {
     validate_keepalive "${KEEPALIVE}"
 }
 
-install_wireguard() {
-    if command -v wg >/dev/null 2>&1 && command -v wg-quick >/dev/null 2>&1; then
+install_dependencies() {
+    if command -v wg >/dev/null 2>&1 \
+        && command -v wg-quick >/dev/null 2>&1 \
+        && command -v python3 >/dev/null 2>&1; then
         return
     fi
     [[ -f /etc/debian_version ]] && command -v apt-get >/dev/null 2>&1 \
-        || die "Phase 2 currently supports Debian-family systems with apt"
+        || die "supported installation requires a Debian-family system with apt"
     apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard
+    DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard python3 ca-certificates
 }
 
 ensure_state_dir() {
@@ -209,12 +231,52 @@ prepare_identity_and_keys() {
     chmod 644 "${STATE_DIR}/public.key"
 }
 
+load_token() {
+    if [[ -n "${TOKEN_FILE}" ]]; then
+        [[ -r "${TOKEN_FILE}" ]] || die "cannot read enrollment token file '${TOKEN_FILE}'"
+        TOKEN="$(cat "${TOKEN_FILE}")"
+    fi
+    [[ -n "${TOKEN}" ]] || die "fresh enrollment requires --token, --token-file, or GWAY_ENROLL_TOKEN"
+}
+
+perform_enrollment() {
+    validate_enroll_url
+    load_token
+    command -v python3 >/dev/null 2>&1 || die "python3 is required for enrollment"
+
+    TMP_ENROLL="$(mktemp)"
+    if ! GWAY_ENROLL_TOKEN="${TOKEN}" python3 "${SCRIPT_DIR}/client/enroll.py" \
+        --url "${ENROLL_URL}" \
+        --device-id "${DEVICE_ID}" \
+        --public-key "$(cat "${STATE_DIR}/public.key")" \
+        >"${TMP_ENROLL}"; then
+        die "authenticated enrollment failed"
+    fi
+
+    local -a values
+    mapfile -t values <"${TMP_ENROLL}"
+    (( ${#values[@]} == 5 )) || die "invalid enrollment client output"
+    SERVER_PUBLIC_KEY="${values[0]}"
+    CLIENT_ADDRESS="${values[1]}"
+    SERVER_ENDPOINT="${values[2]}"
+    SERVER_TUNNEL_IP="${values[3]}"
+    PUBLIC_HOSTNAME="${values[4]}"
+
+    TOKEN=""
+    unset GWAY_ENROLL_TOKEN || true
+    rm -f -- "${TMP_ENROLL}"
+    TMP_ENROLL=""
+}
+
 persist_config() {
     write_state server-public-key "${SERVER_PUBLIC_KEY}"
     write_state client-address "${CLIENT_ADDRESS}"
     write_state server-endpoint "${SERVER_ENDPOINT}"
     write_state server-tunnel-ip "${SERVER_TUNNEL_IP}"
     write_state keepalive "${KEEPALIVE}"
+    if [[ -n "${PUBLIC_HOSTNAME}" ]]; then
+        write_state hostname "${PUBLIC_HOSTNAME}"
+    fi
 }
 
 render_wireguard_config() {
@@ -265,8 +327,8 @@ Device public key: $(cat "${STATE_DIR}/public.key")
 State directory:   ${STATE_DIR}
 
 The device private key remains local and was not printed.
-Configure this public key as a peer on the gateway, then rerun install.sh with:
-  --server-public-key <gateway-public-key> --client-address <assigned-cidr>
+Enroll with:
+  sudo ./install.sh --device ${DEVICE_ID} --token <one-time-token>
 EOF
 }
 
@@ -277,6 +339,7 @@ Device public key: $(cat "${STATE_DIR}/public.key")
 VPN address:       ${CLIENT_ADDRESS}
 Gateway endpoint:  ${SERVER_ENDPOINT}
 Allowed tunnel IP: ${SERVER_TUNNEL_IP}
+Public hostname:   ${PUBLIC_HOSTNAME:-not configured}
 WireGuard service: wg-quick@${WG_INTERFACE}
 Status:             configured
 
@@ -295,6 +358,7 @@ show_status() {
     fi
     printf 'VPN address:       %s\n' "$(read_state client-address || printf 'not configured')"
     printf 'Gateway endpoint:  %s\n' "$(read_state server-endpoint || printf 'not configured')"
+    printf 'Public hostname:   %s\n' "$(read_state hostname || printf 'not configured')"
     if systemctl is-active --quiet "wg-quick@${WG_INTERFACE}.service"; then
         printf 'WireGuard service: active\n'
     else
@@ -304,6 +368,21 @@ show_status() {
         printf '\n'
         wg show "${WG_INTERFACE}"
     fi
+}
+
+check_configuration() {
+    resolve_device_id
+    if [[ -n "${TOKEN_FILE}" ]]; then
+        [[ -r "${TOKEN_FILE}" ]] || die "cannot read enrollment token file '${TOKEN_FILE}'"
+        TOKEN="$(cat "${TOKEN_FILE}")"
+    fi
+    if [[ -n "${TOKEN}" ]]; then
+        validate_enroll_url
+        printf 'enrollment configuration valid for %s\n' "${DEVICE_ID}"
+        return
+    fi
+    validate_install_config
+    printf 'manual configuration valid for %s\n' "${DEVICE_ID}"
 }
 
 while (($#)); do
@@ -321,6 +400,21 @@ while (($#)); do
             shift
             (($#)) || die "--device requires a value"
             DEVICE_ID="$1"
+            ;;
+        --token)
+            shift
+            (($#)) || die "--token requires a value"
+            TOKEN="$1"
+            ;;
+        --token-file)
+            shift
+            (($#)) || die "--token-file requires a value"
+            TOKEN_FILE="$1"
+            ;;
+        --enroll-url)
+            shift
+            (($#)) || die "--enroll-url requires a value"
+            ENROLL_URL="$1"
             ;;
         --server-public-key)
             shift
@@ -360,12 +454,11 @@ done
 
 case "${MODE}" in
     check)
-        validate_install_config
-        printf 'configuration valid for %s\n' "${DEVICE_ID}"
+        check_configuration
         ;;
     prepare)
         require_root
-        install_wireguard
+        install_dependencies
         prepare_identity_and_keys
         print_prepare_summary
         ;;
@@ -374,8 +467,12 @@ case "${MODE}" in
         ;;
     install)
         require_root
-        install_wireguard
+        install_dependencies
         prepare_identity_and_keys
+        load_persisted_config
+        if [[ -z "${SERVER_PUBLIC_KEY}" || -z "${CLIENT_ADDRESS}" ]]; then
+            perform_enrollment
+        fi
         validate_install_config
         persist_config
         apply_wireguard_config
