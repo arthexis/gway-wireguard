@@ -41,3 +41,7 @@ if "${INSTALL}" --check \
     echo "expected invalid WireGuard public key to fail" >&2
     exit 1
 fi
+
+# Real-device validation additionally exercises the mutating apply path; see
+# tests/client/test-cleanup-regression.sh for the EXIT-cleanup invariant found
+# during the first gway-001 deployment.
