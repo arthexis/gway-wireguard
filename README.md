@@ -31,8 +31,11 @@ See [PLAN.md](PLAN.md) for the architecture and phased implementation plan.
 ## Current status
 
 - Phase 0: repository bootstrap — complete.
-- Phase 1: manual WireGuard proof-of-concept tooling — merged; real-device findings remain tracked in issue #2.
-- Phase 2: idempotent client installer — in implementation.
-- Phase 3+: enrollment, DNS, reverse proxy, and hardening — pending.
+- Phase 1: manual WireGuard proof of concept — complete and validated on `gway-001`.
+- Phase 2: idempotent client installer — complete and validated on `gway-001`.
+- Phase 3: authenticated enrollment service — next.
+- Phase 4+: DNS automation, reverse proxy, and hardening — pending.
 
-See [docs/phase-1.md](docs/phase-1.md) for the manual tunnel test procedure and [docs/phase-2.md](docs/phase-2.md) for the client installer.
+The original Phase 2 success criterion in `PLAN.md` describes the eventual one-command bootstrap experience; implementation showed that authenticated server enrollment is required to achieve it, so that final step belongs to Phase 3.
+
+See [docs/phase-1.md](docs/phase-1.md) for the tunnel test procedure, [docs/phase-2.md](docs/phase-2.md) for the client installer, and issue #2 for implementation findings and phase tracking.
