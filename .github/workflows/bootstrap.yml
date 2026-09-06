@@ -18,25 +18,31 @@ jobs:
         run: |
           bash -n install.sh uninstall.sh server/install.sh
           bash -n client/manual-setup.sh server/manual-setup.sh
+          bash -n tests/client/test-install.sh tests/client/test-cleanup-regression.sh
 
       - name: Validate version format
         run: grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' VERSION
 
-      - name: Validate bootstrap files
+      - name: Validate project files
         run: |
           test -s README.md
           test -s PLAN.md
           test -s LICENSE
           test -s VERSION
           test -s docs/phase-1.md
+          test -s docs/phase-2.md
 
       - name: Verify manual helpers expose non-mutating help
         run: |
           ./client/manual-setup.sh --help >/dev/null
           ./server/manual-setup.sh --help >/dev/null
 
-      - name: Verify root installers remain disabled until Phase 2
+      - name: Test Phase 2 client installer validation
         run: |
-          ! ./install.sh
+          ./tests/client/test-install.sh
+          bash ./tests/client/test-cleanup-regression.sh
+
+      - name: Verify future installers remain disabled
+        run: |
           ! ./uninstall.sh
           ! ./server/install.sh
