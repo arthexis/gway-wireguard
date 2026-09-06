@@ -36,4 +36,6 @@ See [PLAN.md](PLAN.md) for the architecture and phased implementation plan.
 - Phase 3: authenticated enrollment service — next.
 - Phase 4+: DNS automation, reverse proxy, and hardening — pending.
 
+The original Phase 2 success criterion in `PLAN.md` describes the eventual one-command bootstrap experience; implementation showed that authenticated server enrollment is required to achieve it, so that final step belongs to Phase 3.
+
 See [docs/phase-1.md](docs/phase-1.md) for the tunnel test procedure, [docs/phase-2.md](docs/phase-2.md) for the client installer, and issue #2 for implementation findings and phase tracking.
