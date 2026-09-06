@@ -76,10 +76,12 @@ def cmd_revoke(config: ServerConfig, args: argparse.Namespace) -> int:
 
     peers = peer_manager_from_config(config)
     public_key = str(record["wireguard_public_key"])
-    peers.remove_peer(device_id, public_key)
     try:
+        peers.remove_peer(device_id, public_key)
         registry.revoke(device_id)
     except Exception:
+        # If either persistent peer removal or the registry update fails after
+        # runtime access changed, restore the known-good enrolled peer.
         try:
             peers.ensure_peer(
                 device_id,
