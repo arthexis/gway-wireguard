@@ -25,6 +25,14 @@ CLIENT_ADDRESS=""
 SERVER_ENDPOINT=""
 SERVER_TUNNEL_IP=""
 KEEPALIVE=""
+TMP_CONFIG=""
+
+cleanup() {
+    if [[ -n "${TMP_CONFIG}" ]]; then
+        rm -f -- "${TMP_CONFIG}"
+    fi
+}
+trap cleanup EXIT
 
 usage() {
     cat <<'EOF'
@@ -226,16 +234,15 @@ EOF
 
 apply_wireguard_config() {
     install -d -o root -g root -m 700 /etc/wireguard
-    local tmp changed=1
-    tmp="$(mktemp)"
-    trap 'rm -f "${tmp}"' EXIT
-    render_wireguard_config "${tmp}"
-    chmod 600 "${tmp}"
+    local changed=1
+    TMP_CONFIG="$(mktemp)"
+    render_wireguard_config "${TMP_CONFIG}"
+    chmod 600 "${TMP_CONFIG}"
 
-    if [[ -f "${WG_CONFIG}" ]] && cmp -s "${tmp}" "${WG_CONFIG}"; then
+    if [[ -f "${WG_CONFIG}" ]] && cmp -s "${TMP_CONFIG}" "${WG_CONFIG}"; then
         changed=0
     else
-        install -o root -g root -m 600 "${tmp}" "${WG_CONFIG}"
+        install -o root -g root -m 600 "${TMP_CONFIG}" "${WG_CONFIG}"
     fi
 
     systemctl enable "wg-quick@${WG_INTERFACE}.service" >/dev/null
@@ -246,6 +253,9 @@ apply_wireguard_config() {
     else
         systemctl start "wg-quick@${WG_INTERFACE}.service"
     fi
+
+    rm -f -- "${TMP_CONFIG}"
+    TMP_CONFIG=""
 }
 
 print_prepare_summary() {
