@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -95,6 +96,67 @@ class ServerCommandTests(unittest.TestCase):
                 "error": "server error",
             },
         )
+
+    def test_ready_rejects_bootstrap_domain_and_disabled_dns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            registry = base / "registry.sqlite3"
+            registry.write_bytes(b"sqlite")
+            env = base / "server.env"
+            env.write_text(
+                "\n".join(
+                    [
+                        f"GWAY_REGISTRY_DB={registry}",
+                        "GWAY_BASE_DOMAIN=arthexis.com",
+                        "GWAY_DNS_PROVIDER=none",
+                        "GWAY_VPN_HOSTNAME=vpn.arthexis.com",
+                        "GWAY_REGISTER_HOSTNAME=register.arthexis.com",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = server.ready(expected_domain="gelectriic.com", env_file=env)
+
+            self.assertFalse(result["ready"])
+            self.assertIn(
+                "base domain mismatch: configured=arthexis.com expected=gelectriic.com",
+                result["issues"],
+            )
+            self.assertIn("DNS provider is disabled", result["issues"])
+
+    def test_ready_accepts_expected_godaddy_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            registry = base / "registry.sqlite3"
+            registry.write_bytes(b"sqlite")
+            key = base / "godaddy.key"
+            secret = base / "godaddy.secret"
+            key.write_text("key\n", encoding="utf-8")
+            secret.write_text("secret\n", encoding="utf-8")
+            env = base / "server.env"
+            env.write_text(
+                "\n".join(
+                    [
+                        f"GWAY_REGISTRY_DB={registry}",
+                        "GWAY_BASE_DOMAIN=gelectriic.com",
+                        "GWAY_DNS_PROVIDER=godaddy",
+                        "GWAY_VPN_HOSTNAME=vpn.gelectriic.com",
+                        "GWAY_REGISTER_HOSTNAME=register.gelectriic.com",
+                        f"GWAY_GODADDY_KEY_FILE={key}",
+                        f"GWAY_GODADDY_SECRET_FILE={secret}",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = server.ready(expected_domain="gelectriic.com", env_file=env)
+
+            self.assertTrue(result["ready"])
+            self.assertEqual(result["issues"], [])
+            self.assertEqual(result["dns_provider"], "godaddy")
 
 
 if __name__ == "__main__":
