@@ -93,6 +93,7 @@ jobs:
           gway wireguard server deploy --help
           gway wireguard server status --help
           gway wireguard server check --help
+          gway wireguard server ready --help
 
       - name: Test first-class GWAY Sigils
         shell: bash
