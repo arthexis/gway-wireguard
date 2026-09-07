@@ -13,7 +13,7 @@ class GwayEnrollCommandTests(unittest.TestCase):
         "gway_wireguard.gway._client_installer", return_value=Path("/repo/install.sh")
     )
     @patch("gway_wireguard.gway.subprocess.run")
-    def test_enroll_uses_gelectriic_default_without_cwd(self, run, _installer) -> None:
+    def test_enroll_uses_arthexis_default_without_cwd(self, run, _installer) -> None:
         run.return_value = subprocess.CompletedProcess(
             ["bash", "/repo/install.sh"],
             0,
@@ -33,7 +33,7 @@ class GwayEnrollCommandTests(unittest.TestCase):
                 "--token-file",
                 "/root/gway-enrollment.token",
                 "--enroll-url",
-                "https://register.gelectriic.com/v1/enroll",
+                "https://register.arthexis.com/v1/enroll",
             ],
             check=False,
             capture_output=True,
