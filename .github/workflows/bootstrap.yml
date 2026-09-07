@@ -55,6 +55,15 @@ jobs:
       - name: Test GWAY command namespace
         run: python3 -m unittest discover -s tests/gway -p 'test_*.py' -v
 
+      - name: Test base GWAY compatibility
+        run: |
+          python3 -m pip install 'git+https://github.com/arthexis/gway.git@main'
+          export GWAY_DATA_HOME="${RUNNER_TEMP}/gway-data"
+          export GWAY_CONFIG_HOME="${RUNNER_TEMP}/gway-config"
+          gway register .
+          gway wireguard status --json
+          gway wg status --json
+
       - name: Test client validation
         run: |
           ./tests/client/test-install.sh
