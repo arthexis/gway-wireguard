@@ -25,6 +25,7 @@ jobs:
           python3 -m py_compile \
             client/enroll.py \
             server/registry.py \
+            server/hosts_manager.py \
             server/peer_manager.py \
             server/enroll_api.py \
             server/admin.py
