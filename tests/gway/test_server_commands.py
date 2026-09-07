@@ -99,7 +99,7 @@ class ServerCommandTests(unittest.TestCase):
             },
         )
 
-    def test_ready_rejects_bootstrap_domain_and_disabled_dns(self) -> None:
+    def test_ready_rejects_domain_mismatch_and_disabled_dns(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             registry = base / "registry.sqlite3"
@@ -109,21 +109,21 @@ class ServerCommandTests(unittest.TestCase):
                 "\n".join(
                     [
                         f"GWAY_REGISTRY_DB={registry}",
-                        "GWAY_BASE_DOMAIN=arthexis.com",
+                        "GWAY_BASE_DOMAIN=example.com",
                         "GWAY_DNS_PROVIDER=none",
-                        "GWAY_VPN_HOSTNAME=vpn.arthexis.com",
-                        "GWAY_REGISTER_HOSTNAME=register.arthexis.com",
+                        "GWAY_VPN_HOSTNAME=vpn.example.com",
+                        "GWAY_REGISTER_HOSTNAME=register.example.com",
                     ]
                 )
                 + "\n",
                 encoding="utf-8",
             )
 
-            result = server.ready(expected_domain="gelectriic.com", env_file=env)
+            result = server.ready(expected_domain="arthexis.com", env_file=env)
 
             self.assertFalse(result["ready"])
             self.assertIn(
-                "base domain mismatch: configured=arthexis.com expected=gelectriic.com",
+                "base domain mismatch: configured=example.com expected=arthexis.com",
                 result["issues"],
             )
             self.assertIn("DNS provider is disabled", result["issues"])
@@ -142,10 +142,10 @@ class ServerCommandTests(unittest.TestCase):
                 "\n".join(
                     [
                         f"GWAY_REGISTRY_DB={registry}",
-                        "GWAY_BASE_DOMAIN=gelectriic.com",
+                        "GWAY_BASE_DOMAIN=arthexis.com",
                         "GWAY_DNS_PROVIDER=godaddy",
-                        "GWAY_VPN_HOSTNAME=vpn.gelectriic.com",
-                        "GWAY_REGISTER_HOSTNAME=register.gelectriic.com",
+                        "GWAY_VPN_HOSTNAME=vpn.arthexis.com",
+                        "GWAY_REGISTER_HOSTNAME=register.arthexis.com",
                         f"GWAY_GODADDY_KEY_FILE={key}",
                         f"GWAY_GODADDY_SECRET_FILE={secret}",
                     ]
@@ -154,7 +154,7 @@ class ServerCommandTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = server.ready(expected_domain="gelectriic.com", env_file=env)
+            result = server.ready(expected_domain="arthexis.com", env_file=env)
 
             self.assertTrue(result["ready"])
             self.assertEqual(result["issues"], [])
