@@ -29,7 +29,12 @@ def _read_optional_secret(
     if direct:
         return direct
     path = Path(values.get(path_name, default_path))
-    if not path.exists():
+    try:
+        if not path.exists():
+            return None
+    except PermissionError:
+        # A non-root diagnostic must not fail merely because the credential
+        # directory is intentionally inaccessible.
         return None
     try:
         value = path.read_text(encoding="utf-8").strip()
@@ -59,8 +64,29 @@ class DNSSettings:
     def from_env(cls) -> "DNSSettings":
         values = server_environment()
         base_domain = values.get("GWAY_BASE_DOMAIN", "arthexis.com")
+        provider = values.get("GWAY_DNS_PROVIDER", "none").strip().lower()
+
+        # Disabled or unsupported providers do not need credential discovery.
+        # This keeps non-root checks independent of intentionally root-only
+        # credential directories. Unsupported providers are rejected by validate().
+        godaddy_key: str | None = None
+        godaddy_secret: str | None = None
+        if provider == "godaddy":
+            godaddy_key = _read_optional_secret(
+                values,
+                "GWAY_GODADDY_KEY",
+                "GWAY_GODADDY_KEY_FILE",
+                "/etc/gway-wireguard/godaddy.key",
+            )
+            godaddy_secret = _read_optional_secret(
+                values,
+                "GWAY_GODADDY_SECRET",
+                "GWAY_GODADDY_SECRET_FILE",
+                "/etc/gway-wireguard/godaddy.secret",
+            )
+
         return cls(
-            provider=values.get("GWAY_DNS_PROVIDER", "none").strip().lower(),
+            provider=provider,
             base_domain=base_domain,
             public_gateway_ip=values.get(
                 "GWAY_PUBLIC_GATEWAY_IP", "54.161.177.151"
@@ -70,18 +96,8 @@ class DNSSettings:
             register_hostname=values.get(
                 "GWAY_REGISTER_HOSTNAME", f"register.{base_domain}"
             ),
-            godaddy_key=_read_optional_secret(
-                values,
-                "GWAY_GODADDY_KEY",
-                "GWAY_GODADDY_KEY_FILE",
-                "/etc/gway-wireguard/godaddy.key",
-            ),
-            godaddy_secret=_read_optional_secret(
-                values,
-                "GWAY_GODADDY_SECRET",
-                "GWAY_GODADDY_SECRET_FILE",
-                "/etc/gway-wireguard/godaddy.secret",
-            ),
+            godaddy_key=godaddy_key,
+            godaddy_secret=godaddy_secret,
             godaddy_api_base=values.get(
                 "GWAY_GODADDY_API_BASE", "https://api.godaddy.com/v1"
             ),
@@ -244,7 +260,7 @@ class DNSManager:
         return DNSMutation(hostname, "A", previous, changed)
 
     def delete_record(self, hostname: str, record_type: str = "A") -> DNSMutation:
-        """Delete one explicit managed record and return reversible metadata."""
+        """Delete one explicit managed record and return reversible mutation metadata."""
         provider = self._require_provider()
         if record_type.upper() != "A":
             raise DNSConfigurationError("Phase 4 manages A records only")
