@@ -29,6 +29,16 @@ gway wireguard dns ensure gway-004
 gway wireguard dns delete gway-004
 ```
 
+GWAY Sigils are available automatically in command argument values. The project itself does not depend on or import `sigils`; eager `%[...]` values are captured by GWAY before project-aware resolution, and lazy `[...]` values are resolved after the managed project and command are known:
+
+```bash
+gway wireguard status --interface '[project.name]'
+gway wireguard status --interface '[command.name]'
+gway wireguard status --interface '%[cwd]/[project.name]'
+```
+
+Project and command routing remain literal, so `wireguard status` selects the command before its argument values are interpolated.
+
 `status` reports the live `gway` WireGuard interface without exposing private key material. Token, device, peer, private-hostname, and DNS operations delegate to the same packaged implementation used by the enrollment service and compatibility server scripts.
 
 Mutating administrative commands require access to root-owned gateway state. Until GWAY's system/appliance installation mode owns that privilege boundary, `server/admin.py` remains the standalone gateway compatibility entrypoint for the Phase 3 operations it already supports.
