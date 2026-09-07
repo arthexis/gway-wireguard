@@ -59,7 +59,7 @@ class GoDaddyProvider:
                 "Accept": "application/json",
                 "Content-Type": "application/json",
                 "Authorization": f"sso-key {self.key}:{self.secret}",
-                "User-Agent": "gway-wireguard/0.2",
+                "User-Agent": "gway-wireguard/0.3",
             },
         )
         try:
