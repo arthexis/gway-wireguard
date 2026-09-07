@@ -34,11 +34,16 @@ jobs:
             src/gway_wireguard/hosts_manager.py \
             src/gway_wireguard/peer_manager.py \
             src/gway_wireguard/admin_ops.py \
+            src/gway_wireguard/dns/__init__.py \
+            src/gway_wireguard/dns/provider.py \
+            src/gway_wireguard/dns/godaddy.py \
+            src/gway_wireguard/dns/service.py \
             src/gway_wireguard/gway/__init__.py \
             src/gway_wireguard/gway/peer.py \
             src/gway_wireguard/gway/device.py \
             src/gway_wireguard/gway/hosts.py \
-            src/gway_wireguard/gway/token.py
+            src/gway_wireguard/gway/token.py \
+            src/gway_wireguard/gway/dns.py
 
       - name: Validate version format
         run: grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' VERSION
@@ -54,6 +59,7 @@ jobs:
           test -s docs/phase-1.md
           test -s docs/phase-2.md
           test -s docs/phase-3.md
+          test -s docs/phase-4.md
           test -s server/systemd/gway-wireguard-enroll.service
 
       - name: Install Python package
@@ -73,6 +79,10 @@ jobs:
           gway wireguard token create --help
           gway wireguard device revoke --help
           gway wireguard hosts sync --help
+          gway wireguard dns status --json
+          gway wireguard dns sync --help
+          gway wireguard dns ensure --help
+          gway wireguard dns delete --help
 
       - name: Test client validation
         run: |
