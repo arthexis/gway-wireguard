@@ -19,6 +19,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from gway_wireguard.dns import (
+    DNSConfigurationError,
+    DNSManager,
+    DNSMutation,
+    DNSProviderError,
+    DNSSettings,
+)
 from hosts_manager import HostsManager, HostsManagerError
 from peer_manager import PeerManager, PeerManagerError
 from registry import (
@@ -115,7 +122,12 @@ class ServerConfig:
 
 
 class EnrollmentService:
-    def __init__(self, config: ServerConfig) -> None:
+    def __init__(
+        self,
+        config: ServerConfig,
+        *,
+        dns_manager: DNSManager | None = None,
+    ) -> None:
         config.validate()
         self.config = config
         self.registry = Registry(
@@ -131,6 +143,16 @@ class EnrollmentService:
             apply_runtime=config.apply_runtime,
         )
         self.hosts = HostsManager(config.hosts_path)
+
+        if dns_manager is not None:
+            self.dns = dns_manager
+        else:
+            dns_settings = DNSSettings.from_env()
+            self.dns = DNSManager(dns_settings) if dns_settings.enabled else None
+        if self.dns is not None and self.dns.settings.base_domain != config.base_domain:
+            raise DNSConfigurationError(
+                "DNS base domain must match enrollment GWAY_BASE_DOMAIN"
+            )
 
     def _gateway_public_key(self) -> str:
         try:
@@ -160,7 +182,6 @@ class EnrollmentService:
                     status=400,
                 )
 
-        # Validate all server response material before consuming a token.
         gateway_public_key = self._gateway_public_key()
         gateway_ip = str(ipaddress.ip_address(self.config.gateway_address))
         gateway_allowed = f"{gateway_ip}/32"
@@ -168,6 +189,7 @@ class EnrollmentService:
 
         created = False
         record: dict[str, Any] | None = None
+        dns_mutation: DNSMutation | None = None
         try:
             with self.registry.transaction() as conn:
                 record, digest, created = self.registry.prepare_enrollment(
@@ -190,8 +212,22 @@ class EnrollmentService:
                     ).fetchall()
                 ]
                 self.hosts.sync(devices)
+                if self.dns is not None:
+                    dns_mutation = self.dns.ensure_record(
+                        str(record["hostname"]),
+                        "A",
+                        self.dns.settings.public_gateway_ip,
+                    )
                 self.registry.consume_token(conn, digest)
         except Exception:
+            # DNS is an external side effect, so restore its previous record set
+            # before rolling back the local enrollment state.
+            if dns_mutation is not None and self.dns is not None:
+                try:
+                    self.dns.restore(dns_mutation)
+                except Exception:
+                    pass
+
             # A newly inserted registry row rolls back with the DB transaction.
             # If peer application already succeeded, remove only that newly
             # created managed peer. Never remove a pre-existing valid device.
@@ -203,9 +239,6 @@ class EnrollmentService:
                     )
                 except Exception:
                     pass
-            # Restore private hostname state to the committed registry after a
-            # failed transaction. A second hosts failure must not mask the
-            # original enrollment error.
             try:
                 self.hosts.sync(self.registry.list_devices())
             except Exception:
@@ -221,8 +254,6 @@ class EnrollmentService:
             "gateway_address": gateway_ip,
             "gateway_endpoint": self.config.gateway_endpoint,
             "gateway_public_key": gateway_public_key,
-            # Keep client routing narrow: the device reaches the gateway, not
-            # other enrolled peers, through its AllowedIPs.
             "allowed_ips": [gateway_allowed],
         }
 
@@ -290,8 +321,15 @@ class EnrollmentHandler(BaseHTTPRequestHandler):
                 503,
                 {"error": "address_pool_exhausted", "message": "VPN address pool exhausted"},
             )
-        except (RegistryError, PeerManagerError, HostsManagerError, OSError, ValueError):
-            # Do not expose internal paths, command output, or enrollment data.
+        except (
+            RegistryError,
+            PeerManagerError,
+            HostsManagerError,
+            DNSConfigurationError,
+            DNSProviderError,
+            OSError,
+            ValueError,
+        ):
             self._send_json(
                 500,
                 {"error": "server_error", "message": "enrollment service error"},
@@ -300,8 +338,6 @@ class EnrollmentHandler(BaseHTTPRequestHandler):
             self._send_json(200, response)
 
     def log_message(self, fmt: str, *args: object) -> None:
-        # BaseHTTPRequestHandler logs only request metadata here. Request bodies
-        # (and therefore enrollment tokens) are never logged.
         sys.stderr.write(
             "%s - - [%s] %s\n"
             % (self.address_string(), self.log_date_time_string(), fmt % args)
@@ -365,6 +401,9 @@ def main() -> int:
             network=config.wg_network,
             gateway_address=config.gateway_address,
         )
+        dns_settings = DNSSettings.from_env()
+        if dns_settings.enabled:
+            DNSManager(dns_settings)
         print("server configuration valid")
         return 0
     serve(config)
