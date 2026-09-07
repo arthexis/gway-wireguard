@@ -79,15 +79,21 @@ def cmd_sync_hosts(config: ServerConfig, _args: argparse.Namespace) -> int:
 
 def cmd_revoke(config: ServerConfig, args: argparse.Namespace) -> int:
     result = revoke_device(args.device, settings=_settings(config))
-    if result.get("already_revoked"):
-        print(f"{result['device']} is already revoked.")
-        return 0
     if result.get("hosts_warning"):
         print(
             f"warning: revoked peer but private hostname sync failed: "
             f"{result['hosts_warning']}",
             file=sys.stderr,
         )
+    if result.get("dns_warning"):
+        print(
+            f"warning: device remains revoked but DNS cleanup failed: "
+            f"{result['dns_warning']}",
+            file=sys.stderr,
+        )
+    if result.get("already_revoked"):
+        print(f"{result['device']} is already revoked; cleanup reconciled.")
+        return 0
     print(f"Revoked {result['device']}; WireGuard peer removed.")
     return 0
 
