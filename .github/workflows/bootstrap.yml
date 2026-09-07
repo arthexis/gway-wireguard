@@ -30,8 +30,15 @@ jobs:
             server/enroll_api.py \
             server/admin.py \
             src/gway_wireguard/__init__.py \
+            src/gway_wireguard/registry.py \
+            src/gway_wireguard/hosts_manager.py \
+            src/gway_wireguard/peer_manager.py \
+            src/gway_wireguard/admin_ops.py \
             src/gway_wireguard/gway/__init__.py \
-            src/gway_wireguard/gway/peer.py
+            src/gway_wireguard/gway/peer.py \
+            src/gway_wireguard/gway/device.py \
+            src/gway_wireguard/gway/hosts.py \
+            src/gway_wireguard/gway/token.py
 
       - name: Validate version format
         run: grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' VERSION
@@ -63,6 +70,9 @@ jobs:
           gway register .
           gway wireguard status --json
           gway wg status --json
+          gway wireguard token create --help
+          gway wireguard device revoke --help
+          gway wireguard hosts sync --help
 
       - name: Test client validation
         run: |
