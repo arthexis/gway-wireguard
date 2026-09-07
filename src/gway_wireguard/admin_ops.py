@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .config import server_environment
 from .dns import DNSConfigurationError, DNSManager, DNSProviderError, DNSSettings
 from .hosts_manager import HostsManager, HostsManagerError
 from .peer_manager import PeerManager
@@ -25,25 +25,26 @@ class AdminSettings:
 
     @classmethod
     def from_env(cls) -> "AdminSettings":
+        values = server_environment()
         return cls(
             db_path=Path(
-                os.environ.get(
+                values.get(
                     "GWAY_REGISTRY_DB",
                     "/var/lib/gway-wireguard/registry.sqlite3",
                 )
             ),
             wg_config=Path(
-                os.environ.get(
+                values.get(
                     "GWAY_WG_CONFIG",
                     "/etc/wireguard/gway.conf",
                 )
             ),
-            wg_interface=os.environ.get("GWAY_WG_INTERFACE", "gway"),
-            wg_bin=os.environ.get("GWAY_WG_BIN", "wg"),
-            wg_network=os.environ.get("GWAY_WG_NETWORK", "10.90.0.0/24"),
-            gateway_address=os.environ.get("GWAY_GATEWAY_ADDRESS", "10.90.0.1"),
-            hosts_path=Path(os.environ.get("GWAY_HOSTS_FILE", "/etc/hosts")),
-            apply_runtime=os.environ.get("GWAY_APPLY_RUNTIME", "1") != "0",
+            wg_interface=values.get("GWAY_WG_INTERFACE", "gway"),
+            wg_bin=values.get("GWAY_WG_BIN", "wg"),
+            wg_network=values.get("GWAY_WG_NETWORK", "10.90.0.0/24"),
+            gateway_address=values.get("GWAY_GATEWAY_ADDRESS", "10.90.0.1"),
+            hosts_path=Path(values.get("GWAY_HOSTS_FILE", "/etc/hosts")),
+            apply_runtime=values.get("GWAY_APPLY_RUNTIME", "1") != "0",
         )
 
 
@@ -146,14 +147,16 @@ def ensure_device_dns(
     if not record["enabled"]:
         raise RegistryError(f"device is revoked: {device_id}")
     manager = dns or DNSManager(DNSSettings.from_env())
+    hostname = str(record["hostname"])
+    manager.settings.validate_device_hostname(hostname)
     mutation = manager.ensure_record(
-        str(record["hostname"]),
+        hostname,
         "A",
         manager.settings.public_gateway_ip,
     )
     return {
         "device": device_id,
-        "hostname": record["hostname"],
+        "hostname": hostname,
         "changed": mutation.changed,
         "provider": manager.settings.provider,
     }
@@ -172,10 +175,12 @@ def delete_device_dns(
     if record is None:
         raise RegistryError(f"unknown device: {device_id}")
     manager = dns or DNSManager(DNSSettings.from_env())
-    mutation = manager.delete_record(str(record["hostname"]))
+    hostname = str(record["hostname"])
+    manager.settings.validate_device_hostname(hostname)
+    mutation = manager.delete_record(hostname)
     return {
         "device": device_id,
-        "hostname": record["hostname"],
+        "hostname": hostname,
         "changed": mutation.changed,
         "provider": manager.settings.provider,
     }
@@ -194,7 +199,9 @@ def _cleanup_dns_after_revoke(
             if not dns_settings.enabled:
                 return None, None
             manager = DNSManager(dns_settings)
-        mutation = manager.delete_record(str(record["hostname"]))
+        hostname = str(record["hostname"])
+        manager.settings.validate_device_hostname(hostname)
+        mutation = manager.delete_record(hostname)
         return mutation.changed, None
     except (DNSConfigurationError, DNSProviderError, OSError, ValueError) as exc:
         return None, str(exc)
