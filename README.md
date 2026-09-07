@@ -20,6 +20,14 @@ An already configured Phase 2 client continues to reuse its persisted identity, 
 
 The target design gives a deployed device a stable hostname such as `gway-004.arthexis.com` while the device initiates an outbound WireGuard tunnel to a central gateway. Public HTTPS routing and DNS automation remain later phases; administrative services remain private to the WireGuard network by default.
 
+On the gateway, Phase 3 also maintains private short names for registry-managed devices, so administrative access can use the device identity directly:
+
+```bash
+ssh arthe@gway-004
+```
+
+The short name resolves to the registry-assigned WireGuard address through a managed `/etc/hosts` block and is separate from public `*.arthexis.com` DNS.
+
 See [PLAN.md](PLAN.md) for the architecture and phased implementation plan.
 
 ## Current status
@@ -27,7 +35,7 @@ See [PLAN.md](PLAN.md) for the architecture and phased implementation plan.
 - Phase 0: repository bootstrap — complete.
 - Phase 1: manual WireGuard proof of concept — complete and validated on `gway-001`.
 - Phase 2: idempotent client installer — complete and validated on `gway-001`.
-- Phase 3: authenticated enrollment service — implemented; live gateway/device validation pending.
+- Phase 3: authenticated enrollment service and private short-hostname resolution — implemented; live gateway/device validation pending.
 - Phase 4+: DNS automation, reverse proxy, and hardening — pending.
 
 Phase 3 intentionally preserves pre-existing/manual WireGuard peers on the gateway. The registry allocates around addresses already present in the WireGuard configuration instead of treating an empty registry as an empty network.
