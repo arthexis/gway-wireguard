@@ -27,6 +27,30 @@ The separation is deliberate: `gway upgrade wireguard` updates the managed
 source checkout and its GWAY environment, while `server deploy` changes the
 running gateway.
 
+## Production readiness gate
+
+`server status` is descriptive and can legitimately report a development or
+DNS-disabled installation as healthy. Before Phase 5, use the stricter readiness
+command against the intended production domain:
+
+```bash
+sudo gway wireguard server ready --expected-domain gelectriic.com
+```
+
+The readiness check reads the deployed `/etc/gway-wireguard/server.env` without
+sourcing it and does not print credential contents. It verifies:
+
+- the deployed environment exists and is readable;
+- the registry path exists;
+- the configured base domain matches the requested production domain;
+- DNS is enabled unless explicitly disabled for the check;
+- `vpn.<domain>` and `register.<domain>` match the configured base domain;
+- GoDaddy credential files exist and are non-empty when that provider is selected.
+
+This is intentionally separate from installation so generic `arthexis.com` /
+DNS-disabled bootstrap defaults remain usable for development while production
+validation fails clearly instead of looking Phase-5-ready.
+
 ## Enrollment diagnostics
 
 Enrollment clients continue to receive generic server errors for internal
@@ -68,17 +92,18 @@ bodies and WireGuard private keys are never logged.
 Keep the legacy `gway-001` peer unmanaged during this validation.
 
 1. Upgrade and deploy the current gateway code.
-2. Verify `gway-001` remains present and reachable.
-3. Create a fresh device-scoped token for `gway-004`.
-4. Enroll `gway-004` through `https://register.gelectriic.com/v1/enroll`.
-5. Confirm its registry-assigned VPN `/32`; do not infer the address from the
+2. Run `server ready --expected-domain gelectriic.com` and require a clean result.
+3. Verify `gway-001` remains present and reachable.
+4. Create a fresh device-scoped token for `gway-004`.
+5. Enroll `gway-004` through `https://register.gelectriic.com/v1/enroll`.
+6. Confirm its registry-assigned VPN `/32`; do not infer the address from the
    device suffix.
-6. Verify WireGuard handshake and bidirectional gateway reachability.
-7. Verify `getent hosts gway-004` and SSH from the gateway over WireGuard.
-8. Verify `gway-004.gelectriic.com` points to the public gateway address.
-9. Verify replay of the successfully consumed token is rejected.
-10. Run DNS ensure/sync repeatedly and verify idempotency.
-11. Exercise revocation on a disposable/test identity, or defer revocation of
+7. Verify WireGuard handshake and bidirectional gateway reachability.
+8. Verify `getent hosts gway-004` and SSH from the gateway over WireGuard.
+9. Verify `gway-004.gelectriic.com` points to the public gateway address.
+10. Verify replay of the successfully consumed token is rejected.
+11. Run DNS ensure/sync repeatedly and verify idempotency.
+12. Exercise revocation on a disposable/test identity, or defer revocation of
     `gway-004` if it is intended to remain the first managed production peer.
-12. Record the live findings in implementation tracking issue #2 before
+13. Record the live findings in implementation tracking issue #2 before
     starting Phase 5 reverse-proxy work.
