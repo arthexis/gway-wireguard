@@ -79,6 +79,7 @@ jobs:
           gway register .
           gway wireguard status --json
           gway wg status --json
+          gway wireguard enroll --help
           gway wireguard token create --help
           gway wireguard device revoke --help
           gway wireguard hosts sync --help
