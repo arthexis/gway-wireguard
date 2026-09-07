@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import ipaddress
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
+
+from gway_wireguard.config import server_environment
 
 from .godaddy import GoDaddyProvider
 from .provider import DNSConfigurationError, DNSProvider, DNSRecord
@@ -18,15 +19,23 @@ _DOMAIN_RE = re.compile(
 )
 
 
-def _read_optional_secret(env_name: str, path_name: str, default_path: str) -> str | None:
-    direct = os.environ.get(env_name)
+def _read_optional_secret(
+    values: Mapping[str, str],
+    env_name: str,
+    path_name: str,
+    default_path: str,
+) -> str | None:
+    direct = values.get(env_name)
     if direct:
         return direct
-    path = Path(os.environ.get(path_name, default_path))
+    path = Path(values.get(path_name, default_path))
     if not path.exists():
         return None
     try:
         value = path.read_text(encoding="utf-8").strip()
+    except PermissionError:
+        # Non-privileged status can still report that credentials are not readable.
+        return None
     except OSError as exc:
         raise DNSConfigurationError(f"cannot read DNS credential file: {path}") from exc
     return value or None
@@ -48,31 +57,32 @@ class DNSSettings:
 
     @classmethod
     def from_env(cls) -> "DNSSettings":
-        base_domain = os.environ.get("GWAY_BASE_DOMAIN", "arthexis.com")
+        values = server_environment()
+        base_domain = values.get("GWAY_BASE_DOMAIN", "arthexis.com")
         return cls(
-            provider=os.environ.get("GWAY_DNS_PROVIDER", "none").strip().lower(),
+            provider=values.get("GWAY_DNS_PROVIDER", "none").strip().lower(),
             base_domain=base_domain,
-            public_gateway_ip=os.environ.get(
+            public_gateway_ip=values.get(
                 "GWAY_PUBLIC_GATEWAY_IP", "54.161.177.151"
             ),
-            ttl=int(os.environ.get("GWAY_DNS_TTL", "600")),
-            vpn_hostname=os.environ.get(
-                "GWAY_VPN_HOSTNAME", f"vpn.{base_domain}"
-            ),
-            register_hostname=os.environ.get(
+            ttl=int(values.get("GWAY_DNS_TTL", "600")),
+            vpn_hostname=values.get("GWAY_VPN_HOSTNAME", f"vpn.{base_domain}"),
+            register_hostname=values.get(
                 "GWAY_REGISTER_HOSTNAME", f"register.{base_domain}"
             ),
             godaddy_key=_read_optional_secret(
+                values,
                 "GWAY_GODADDY_KEY",
                 "GWAY_GODADDY_KEY_FILE",
                 "/etc/gway-wireguard/godaddy.key",
             ),
             godaddy_secret=_read_optional_secret(
+                values,
                 "GWAY_GODADDY_SECRET",
                 "GWAY_GODADDY_SECRET_FILE",
                 "/etc/gway-wireguard/godaddy.secret",
             ),
-            godaddy_api_base=os.environ.get(
+            godaddy_api_base=values.get(
                 "GWAY_GODADDY_API_BASE", "https://api.godaddy.com/v1"
             ),
         )
@@ -96,12 +106,13 @@ class DNSSettings:
             raise DNSConfigurationError("DNS TTL must be between 600 and 86400 seconds")
         for hostname in (self.vpn_hostname, self.register_hostname):
             self.relative_name(hostname)
+        if self.vpn_hostname == self.register_hostname:
+            raise DNSConfigurationError("VPN and registration hostnames must be distinct")
         if self.provider == "godaddy" and (
             not self.godaddy_key or not self.godaddy_secret
         ):
             raise DNSConfigurationError(
-                "GoDaddy DNS requires GWAY_GODADDY_KEY/GWAY_GODADDY_SECRET "
-                "or the root-readable credential files"
+                "GoDaddy DNS credentials are not configured or not readable"
             )
 
     def relative_name(self, hostname: str) -> str:
@@ -116,6 +127,15 @@ class DNSSettings:
             for label in name.split(".")
         ):
             raise DNSConfigurationError(f"invalid managed hostname: {hostname}")
+        return name
+
+    def validate_device_hostname(self, hostname: str) -> str:
+        """Validate a registry device name and reject operational-name collisions."""
+        name = self.relative_name(hostname)
+        if hostname in {self.vpn_hostname, self.register_hostname}:
+            raise DNSConfigurationError(
+                f"device hostname conflicts with an operational DNS name: {hostname}"
+            )
         return name
 
 
@@ -180,6 +200,18 @@ class DNSManager:
             raise DNSConfigurationError("DNS automation is disabled")
         return self.provider
 
+    def _restore_provider_state(
+        self,
+        name: str,
+        record_type: str,
+        previous: tuple[DNSRecord, ...],
+    ) -> None:
+        provider = self._require_provider()
+        if previous:
+            provider.replace_records(name, record_type, list(previous))
+        else:
+            provider.delete_records(name, record_type)
+
     def ensure_record(
         self,
         hostname: str,
@@ -201,7 +233,14 @@ class DNSManager:
         desired = (DNSRecord(data=str(address), ttl=self.settings.ttl),)
         changed = previous != desired
         if changed:
-            provider.replace_records(name, "A", list(desired))
+            try:
+                provider.replace_records(name, "A", list(desired))
+            except Exception:
+                try:
+                    self._restore_provider_state(name, "A", previous)
+                except Exception:
+                    pass
+                raise
         return DNSMutation(hostname, "A", previous, changed)
 
     def delete_record(self, hostname: str, record_type: str = "A") -> DNSMutation:
@@ -213,19 +252,22 @@ class DNSManager:
         previous = tuple(provider.get_records(name, "A"))
         changed = bool(previous)
         if changed:
-            provider.delete_records(name, "A")
+            try:
+                provider.delete_records(name, "A")
+            except Exception:
+                try:
+                    self._restore_provider_state(name, "A", previous)
+                except Exception:
+                    pass
+                raise
         return DNSMutation(hostname, "A", previous, changed)
 
     def restore(self, mutation: DNSMutation) -> None:
         """Restore provider state captured by a prior mutation."""
         if not mutation.changed:
             return
-        provider = self._require_provider()
         name = self.settings.relative_name(mutation.hostname)
-        if mutation.previous:
-            provider.replace_records(name, mutation.record_type, list(mutation.previous))
-        else:
-            provider.delete_records(name, mutation.record_type)
+        self._restore_provider_state(name, mutation.record_type, mutation.previous)
 
     def sync_devices(
         self,
@@ -235,6 +277,10 @@ class DNSManager:
     ) -> dict[str, object]:
         """Reconcile operational names and registry-owned device records atomically."""
         self._require_provider()
+        device_rows = list(devices)
+        for record in device_rows:
+            self.settings.validate_device_hostname(str(record["hostname"]))
+
         mutations: list[DNSMutation] = []
         ensured: list[str] = []
         deleted: list[str] = []
@@ -252,7 +298,7 @@ class DNSManager:
                     mutations.append(mutation)
                     ensured.append(hostname)
 
-            for record in devices:
+            for record in device_rows:
                 hostname = str(record["hostname"])
                 if record.get("enabled"):
                     mutation = self.ensure_record(
@@ -282,5 +328,5 @@ class DNSManager:
 
 
 def manager_from_env() -> DNSManager:
-    """Construct the configured DNS manager from server environment state."""
+    """Construct the configured DNS manager from installed server state."""
     return DNSManager(DNSSettings.from_env())
