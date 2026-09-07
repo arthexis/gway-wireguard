@@ -11,6 +11,7 @@
 set -euo pipefail
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PACKAGE_DIR="${SOURCE_DIR}/../src/gway_wireguard"
 STATE_DIR="${STATE_DIR:-/etc/gway-wireguard}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/gway-wireguard/server}"
 DATA_DIR="${DATA_DIR:-/var/lib/gway-wireguard}"
@@ -93,7 +94,6 @@ prepare_keys() {
 ensure_wireguard_config() {
     install -d -o root -g root -m 700 /etc/wireguard
     if [[ -e "${WG_CONFIG}" ]]; then
-        # Preserve Phase 1/manual peers and all unrelated existing settings.
         return
     fi
     umask 077
@@ -107,6 +107,7 @@ EOF
 }
 
 install_server_files() {
+    [[ -d "${PACKAGE_DIR}" ]] || die "missing packaged implementation: ${PACKAGE_DIR}"
     install -d -o root -g root -m 755 "${INSTALL_DIR}"
     install -o root -g root -m 755 \
         "${SOURCE_DIR}/enroll_api.py" \
@@ -117,6 +118,12 @@ install_server_files() {
         "${SOURCE_DIR}/hosts_manager.py" \
         "${SOURCE_DIR}/peer_manager.py" \
         "${INSTALL_DIR}/"
+
+    rm -rf "${INSTALL_DIR}/gway_wireguard"
+    cp -a "${PACKAGE_DIR}" "${INSTALL_DIR}/gway_wireguard"
+    chown -R root:root "${INSTALL_DIR}/gway_wireguard"
+    find "${INSTALL_DIR}/gway_wireguard" -type d -exec chmod 755 {} +
+    find "${INSTALL_DIR}/gway_wireguard" -type f -exec chmod 644 {} +
 
     install -d -o root -g root -m 700 "${DATA_DIR}"
     install -o root -g root -m 644 \
@@ -189,12 +196,18 @@ show_status() {
 
 check_source() {
     command -v python3 >/dev/null 2>&1 || die "python3 is required for --check"
-    python3 -m py_compile \
-        "${SOURCE_DIR}/registry.py" \
-        "${SOURCE_DIR}/hosts_manager.py" \
-        "${SOURCE_DIR}/peer_manager.py" \
-        "${SOURCE_DIR}/enroll_api.py" \
-        "${SOURCE_DIR}/admin.py"
+    PYTHONPATH="${SOURCE_DIR}/../src${PYTHONPATH:+:${PYTHONPATH}}" \
+        python3 -m py_compile \
+            "${SOURCE_DIR}/registry.py" \
+            "${SOURCE_DIR}/hosts_manager.py" \
+            "${SOURCE_DIR}/peer_manager.py" \
+            "${SOURCE_DIR}/enroll_api.py" \
+            "${SOURCE_DIR}/admin.py" \
+            "${PACKAGE_DIR}/registry.py" \
+            "${PACKAGE_DIR}/hosts_manager.py" \
+            "${PACKAGE_DIR}/peer_manager.py" \
+            "${PACKAGE_DIR}/admin_ops.py"
+    PYTHONPATH="${SOURCE_DIR}/../src${PYTHONPATH:+:${PYTHONPATH}}" \
     GWAY_REGISTRY_DB="/tmp/gway-wireguard-check.sqlite3" \
     GWAY_WG_CONFIG="/tmp/gway-wireguard-check.conf" \
     GWAY_HOSTS_FILE="/tmp/gway-wireguard-check.hosts" \
@@ -246,7 +259,10 @@ Registry:           ${DATA_DIR}/registry.sqlite3
 Private hostnames:  ${HOSTS_FILE}
 Enrollment bind:    ${ENROLL_BIND}:${ENROLL_PORT}
 
-Create a one-time token with:
+With GWAY installed, create a one-time token with:
+  sudo gway wireguard token create --device gway-004
+
+Compatibility entrypoint:
   sudo ${INSTALL_DIR}/admin.py token --device gway-004
 
 The public enrollment endpoint must be HTTPS. Until later DNS/proxy phases are
