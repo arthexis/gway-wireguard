@@ -1,18 +1,41 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SERVER = Path(__file__).resolve().parents[2] / "server"
 sys.path.insert(0, str(SERVER))
 
 from enroll_api import EnrollmentService, ServerConfig  # noqa: E402
+from gway_wireguard.dns import DNSManager, DNSRecord, DNSSettings  # noqa: E402
 from registry import EnrollmentRejected  # noqa: E402
 
 KEY_GATEWAY = "G" * 43 + "="
 KEY_MANUAL = "M" * 43 + "="
 KEY_DEVICE = "D" * 43 + "="
+
+
+class FakeDNSProvider:
+    def __init__(self) -> None:
+        self.records: dict[tuple[str, str], list[DNSRecord]] = {}
+
+    def get_records(self, name: str, record_type: str) -> list[DNSRecord]:
+        return list(self.records.get((name, record_type), []))
+
+    def replace_records(
+        self,
+        name: str,
+        record_type: str,
+        records: list[DNSRecord],
+    ) -> None:
+        self.records[(name, record_type)] = list(records)
+
+    def delete_records(self, name: str, record_type: str) -> None:
+        self.records.pop((name, record_type), None)
 
 
 class EnrollmentServiceTests(unittest.TestCase):
@@ -52,6 +75,20 @@ class EnrollmentServiceTests(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def dns_manager(self) -> tuple[DNSManager, FakeDNSProvider]:
+        provider = FakeDNSProvider()
+        settings = DNSSettings(
+            provider="godaddy",
+            base_domain="arthexis.com",
+            public_gateway_ip="54.161.177.151",
+            ttl=600,
+            vpn_hostname="vpn.arthexis.com",
+            register_hostname="register.arthexis.com",
+            godaddy_key="key",
+            godaddy_secret="secret",
+        )
+        return DNSManager(settings, provider=provider), provider
 
     def test_enrollment_consumes_token_allocates_address_and_preserves_manual_peer(self):
         token, _ = self.service.registry.create_token(device_id="gway-004")
@@ -106,6 +143,53 @@ class EnrollmentServiceTests(unittest.TestCase):
         )
         self.assertEqual(response["vpn_address"], "10.90.0.2/32")
         self.assertIn("10.90.0.2\tgway-004", self.hosts_path.read_text())
+
+    def test_enrollment_ensures_explicit_public_dns_record(self):
+        dns, provider = self.dns_manager()
+        service = EnrollmentService(self.config, dns_manager=dns)
+        token, _ = service.registry.create_token(device_id="gway-004")
+
+        response = service.enroll(
+            {
+                "device_id": "gway-004",
+                "public_key": KEY_DEVICE,
+                "token": token,
+            }
+        )
+
+        self.assertEqual(response["hostname"], "gway-004.arthexis.com")
+        self.assertEqual(
+            provider.records[("gway-004", "A")],
+            [DNSRecord("54.161.177.151", 600)],
+        )
+
+    def test_dns_is_restored_when_enrollment_fails_after_dns_change(self):
+        dns, provider = self.dns_manager()
+        provider.records[("gway-004", "A")] = [DNSRecord("192.0.2.10", 600)]
+        service = EnrollmentService(self.config, dns_manager=dns)
+        token, _ = service.registry.create_token(device_id="gway-004")
+
+        with patch.object(
+            service.registry,
+            "consume_token",
+            side_effect=RuntimeError("late failure"),
+        ):
+            with self.assertRaises(RuntimeError):
+                service.enroll(
+                    {
+                        "device_id": "gway-004",
+                        "public_key": KEY_DEVICE,
+                        "token": token,
+                    }
+                )
+
+        self.assertEqual(
+            provider.records[("gway-004", "A")],
+            [DNSRecord("192.0.2.10", 600)],
+        )
+        self.assertIsNone(service.registry.get_device("gway-004"))
+        self.assertNotIn(KEY_DEVICE, self.config_path.read_text())
+        self.assertNotIn("gway-004", self.hosts_path.read_text())
 
 
 if __name__ == "__main__":
