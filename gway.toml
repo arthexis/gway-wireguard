@@ -1,0 +1,7 @@
+[project]
+name = "wireguard"
+aliases = ["wg"]
+
+[adapter]
+type = "python"
+module = "gway_wireguard.gway"
