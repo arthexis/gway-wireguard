@@ -82,7 +82,9 @@ def ready(
 
     domain = values.get("GWAY_BASE_DOMAIN", "").strip().lower()
     provider = values.get("GWAY_DNS_PROVIDER", "none").strip().lower() or "none"
-    registry = Path(values.get("GWAY_REGISTRY_DB", "/var/lib/gway-wireguard/registry.sqlite3"))
+    registry = Path(
+        values.get("GWAY_REGISTRY_DB", "/var/lib/gway-wireguard/registry.sqlite3")
+    )
     vpn_hostname = values.get("GWAY_VPN_HOSTNAME", "").strip().lower()
     register_hostname = values.get("GWAY_REGISTER_HOSTNAME", "").strip().lower()
 
