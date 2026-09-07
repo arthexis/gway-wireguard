@@ -21,6 +21,7 @@ WG_PORT="${WG_PORT:-51820}"
 GATEWAY_ADDRESS="${GATEWAY_ADDRESS:-10.90.0.1}"
 GATEWAY_ENDPOINT="${GATEWAY_ENDPOINT:-54.161.177.151:51820}"
 BASE_DOMAIN="${BASE_DOMAIN:-arthexis.com}"
+HOSTS_FILE="${HOSTS_FILE:-/etc/hosts}"
 ENROLL_BIND="${ENROLL_BIND:-127.0.0.1}"
 ENROLL_PORT="${ENROLL_PORT:-8787}"
 WG_CONFIG="/etc/wireguard/${WG_INTERFACE}.conf"
@@ -48,7 +49,7 @@ Environment overrides:
   STATE_DIR, INSTALL_DIR, DATA_DIR
   WG_INTERFACE, WG_ADDRESS, WG_NETWORK, WG_PORT
   GATEWAY_ADDRESS, GATEWAY_ENDPOINT
-  BASE_DOMAIN, ENROLL_BIND, ENROLL_PORT
+  BASE_DOMAIN, HOSTS_FILE, ENROLL_BIND, ENROLL_PORT
 
 The enrollment API binds to 127.0.0.1 by default. Expose it only through an
 HTTPS reverse proxy, or explicitly configure TLS in server.env. The service
@@ -113,6 +114,7 @@ install_server_files() {
         "${INSTALL_DIR}/"
     install -o root -g root -m 644 \
         "${SOURCE_DIR}/registry.py" \
+        "${SOURCE_DIR}/hosts_manager.py" \
         "${SOURCE_DIR}/peer_manager.py" \
         "${INSTALL_DIR}/"
 
@@ -134,6 +136,7 @@ GWAY_GATEWAY_ADDRESS=${GATEWAY_ADDRESS}
 GWAY_GATEWAY_ENDPOINT=${GATEWAY_ENDPOINT}
 GWAY_GATEWAY_PUBLIC_KEY=${PUBLIC_KEY}
 GWAY_BASE_DOMAIN=${BASE_DOMAIN}
+GWAY_HOSTS_FILE=${HOSTS_FILE}
 GWAY_ENROLL_BIND=${ENROLL_BIND}
 GWAY_ENROLL_PORT=${ENROLL_PORT}
 GWAY_APPLY_RUNTIME=1
@@ -149,6 +152,7 @@ initialize_registry() {
     set +a
     python3 "${INSTALL_DIR}/admin.py" init >/dev/null
     chmod 600 "${DATA_DIR}/registry.sqlite3"
+    python3 "${INSTALL_DIR}/admin.py" sync-hosts >/dev/null
 }
 
 enable_services() {
@@ -187,11 +191,13 @@ check_source() {
     command -v python3 >/dev/null 2>&1 || die "python3 is required for --check"
     python3 -m py_compile \
         "${SOURCE_DIR}/registry.py" \
+        "${SOURCE_DIR}/hosts_manager.py" \
         "${SOURCE_DIR}/peer_manager.py" \
         "${SOURCE_DIR}/enroll_api.py" \
         "${SOURCE_DIR}/admin.py"
     GWAY_REGISTRY_DB="/tmp/gway-wireguard-check.sqlite3" \
     GWAY_WG_CONFIG="/tmp/gway-wireguard-check.conf" \
+    GWAY_HOSTS_FILE="/tmp/gway-wireguard-check.hosts" \
     GWAY_APPLY_RUNTIME=0 \
         python3 "${SOURCE_DIR}/enroll_api.py" check >/dev/null
     printf 'server source/configuration valid\n'
@@ -237,6 +243,7 @@ Phase 3 enrollment server installed.
 
 Gateway public key: $(cat "${PUBLIC_KEY}")
 Registry:           ${DATA_DIR}/registry.sqlite3
+Private hostnames:  ${HOSTS_FILE}
 Enrollment bind:    ${ENROLL_BIND}:${ENROLL_PORT}
 
 Create a one-time token with:
