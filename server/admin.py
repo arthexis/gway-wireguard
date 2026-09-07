@@ -7,6 +7,7 @@ import argparse
 import sys
 
 from enroll_api import ServerConfig
+from hosts_manager import HostsManager, HostsManagerError
 from peer_manager import PeerManager, PeerManagerError
 from registry import Registry, RegistryError, validate_device_id
 
@@ -26,6 +27,14 @@ def peer_manager_from_config(config: ServerConfig) -> PeerManager:
         wg_bin=config.wg_bin,
         apply_runtime=config.apply_runtime,
     )
+
+
+def hosts_manager_from_config(config: ServerConfig) -> HostsManager:
+    return HostsManager(config.hosts_path)
+
+
+def sync_hosts(config: ServerConfig, registry: Registry) -> bool:
+    return hosts_manager_from_config(config).sync(registry.list_devices())
 
 
 def cmd_init(config: ServerConfig, _args: argparse.Namespace) -> int:
@@ -64,6 +73,14 @@ def cmd_list(config: ServerConfig, _args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sync_hosts(config: ServerConfig, _args: argparse.Namespace) -> int:
+    registry = registry_from_config(config)
+    changed = sync_hosts(config, registry)
+    state = "updated" if changed else "already current"
+    print(f"Private hostnames {state}: {config.hosts_path}")
+    return 0
+
+
 def cmd_revoke(config: ServerConfig, args: argparse.Namespace) -> int:
     device_id = validate_device_id(args.device)
     registry = registry_from_config(config)
@@ -91,6 +108,14 @@ def cmd_revoke(config: ServerConfig, args: argparse.Namespace) -> int:
         except Exception:
             pass
         raise
+
+    # Revocation is the security boundary. If hostname cleanup fails afterward,
+    # leave the peer revoked and report the stale convenience mapping rather
+    # than restoring network access.
+    try:
+        sync_hosts(config, registry)
+    except HostsManagerError as exc:
+        print(f"warning: revoked peer but private hostname sync failed: {exc}", file=sys.stderr)
 
     print(f"Revoked {device_id}; WireGuard peer removed.")
     return 0
@@ -121,6 +146,12 @@ def build_parser() -> argparse.ArgumentParser:
     listing = sub.add_parser("list", help="list enrolled devices")
     listing.set_defaults(func=cmd_list)
 
+    sync = sub.add_parser(
+        "sync-hosts",
+        help="regenerate private short hostnames from the registry",
+    )
+    sync.set_defaults(func=cmd_sync_hosts)
+
     revoke = sub.add_parser("revoke", help="revoke an enrolled device")
     revoke.add_argument("device")
     revoke.set_defaults(func=cmd_revoke)
@@ -134,7 +165,7 @@ def main() -> int:
     config.validate()
     try:
         return args.func(config, args)
-    except (RegistryError, PeerManagerError, ValueError, OSError) as exc:
+    except (RegistryError, PeerManagerError, HostsManagerError, ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
