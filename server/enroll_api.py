@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from hosts_manager import HostsManager, HostsManagerError
 from peer_manager import PeerManager, PeerManagerError
 from registry import (
     AddressPoolExhausted,
@@ -46,6 +47,7 @@ class ServerConfig:
     gateway_endpoint: str
     gateway_public_key_path: Path
     base_domain: str
+    hosts_path: Path
     bind_host: str
     bind_port: int
     tls_cert: Path | None = None
@@ -84,6 +86,7 @@ class ServerConfig:
                 )
             ),
             base_domain=os.environ.get("GWAY_BASE_DOMAIN", "arthexis.com"),
+            hosts_path=Path(os.environ.get("GWAY_HOSTS_FILE", "/etc/hosts")),
             bind_host=os.environ.get("GWAY_ENROLL_BIND", "127.0.0.1"),
             bind_port=int(os.environ.get("GWAY_ENROLL_PORT", "8787")),
             tls_cert=Path(cert) if cert else None,
@@ -103,6 +106,8 @@ class ServerConfig:
         port = int(self.gateway_endpoint.rsplit(":", 1)[1])
         if port < 1 or port > 65535:
             raise ValueError("invalid WireGuard endpoint port")
+        if not self.hosts_path.is_absolute():
+            raise ValueError("GWAY_HOSTS_FILE must be an absolute path")
         if self.bind_port < 1 or self.bind_port > 65535:
             raise ValueError("invalid enrollment bind port")
         if bool(self.tls_cert) != bool(self.tls_key):
@@ -125,6 +130,7 @@ class EnrollmentService:
             wg_bin=config.wg_bin,
             apply_runtime=config.apply_runtime,
         )
+        self.hosts = HostsManager(config.hosts_path)
 
     def _gateway_public_key(self) -> str:
         try:
@@ -177,6 +183,13 @@ class EnrollmentService:
                     str(record["wireguard_public_key"]),
                     str(record["vpn_address"]),
                 )
+                devices = [
+                    dict(row)
+                    for row in conn.execute(
+                        "SELECT * FROM devices ORDER BY device_id"
+                    ).fetchall()
+                ]
+                self.hosts.sync(devices)
                 self.registry.consume_token(conn, digest)
         except Exception:
             # A newly inserted registry row rolls back with the DB transaction.
@@ -190,6 +203,13 @@ class EnrollmentService:
                     )
                 except Exception:
                     pass
+            # Restore private hostname state to the committed registry after a
+            # failed transaction. A second hosts failure must not mask the
+            # original enrollment error.
+            try:
+                self.hosts.sync(self.registry.list_devices())
+            except Exception:
+                pass
             raise
 
         assert record is not None
@@ -270,7 +290,7 @@ class EnrollmentHandler(BaseHTTPRequestHandler):
                 503,
                 {"error": "address_pool_exhausted", "message": "VPN address pool exhausted"},
             )
-        except (RegistryError, PeerManagerError, OSError, ValueError):
+        except (RegistryError, PeerManagerError, HostsManagerError, OSError, ValueError):
             # Do not expose internal paths, command output, or enrollment data.
             self._send_json(
                 500,
