@@ -213,24 +213,21 @@ class EnrollmentService:
                 ]
                 self.hosts.sync(devices)
                 if self.dns is not None:
+                    hostname = str(record["hostname"])
+                    self.dns.settings.validate_device_hostname(hostname)
                     dns_mutation = self.dns.ensure_record(
-                        str(record["hostname"]),
+                        hostname,
                         "A",
                         self.dns.settings.public_gateway_ip,
                     )
                 self.registry.consume_token(conn, digest)
         except Exception:
-            # DNS is an external side effect, so restore its previous record set
-            # before rolling back the local enrollment state.
             if dns_mutation is not None and self.dns is not None:
                 try:
                     self.dns.restore(dns_mutation)
                 except Exception:
                     pass
 
-            # A newly inserted registry row rolls back with the DB transaction.
-            # If peer application already succeeded, remove only that newly
-            # created managed peer. Never remove a pre-existing valid device.
             if created and record is not None:
                 try:
                     self.peers.remove_peer(
