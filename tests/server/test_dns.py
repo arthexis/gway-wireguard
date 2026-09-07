@@ -5,7 +5,12 @@ import json
 import unittest
 from unittest.mock import patch
 
-from gway_wireguard.dns import DNSManager, DNSRecord, DNSSettings
+from gway_wireguard.dns import (
+    DNSConfigurationError,
+    DNSManager,
+    DNSRecord,
+    DNSSettings,
+)
 from gway_wireguard.dns.godaddy import GoDaddyProvider
 
 
@@ -101,6 +106,15 @@ class DNSManagerTests(unittest.TestCase):
             [DNSRecord("54.161.177.151", 600)],
         )
         self.assertNotIn(("gway-005", "A"), self.provider.records)
+
+    def test_device_cannot_claim_operational_dns_name(self) -> None:
+        with self.assertRaises(DNSConfigurationError):
+            self.manager.sync_devices(
+                [{"hostname": "vpn.arthexis.com", "enabled": 1}]
+            )
+        self.assertEqual(self.provider.records, {})
+        self.assertEqual(self.provider.replacements, [])
+        self.assertEqual(self.provider.deletions, [])
 
 
 class _Response:
