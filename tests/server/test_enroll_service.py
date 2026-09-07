@@ -11,7 +11,12 @@ SERVER = Path(__file__).resolve().parents[2] / "server"
 sys.path.insert(0, str(SERVER))
 
 from enroll_api import EnrollmentService, ServerConfig  # noqa: E402
-from gway_wireguard.dns import DNSManager, DNSRecord, DNSSettings  # noqa: E402
+from gway_wireguard.dns import (  # noqa: E402
+    DNSConfigurationError,
+    DNSManager,
+    DNSRecord,
+    DNSSettings,
+)
 from registry import EnrollmentRejected  # noqa: E402
 
 KEY_GATEWAY = "G" * 43 + "="
@@ -190,6 +195,36 @@ class EnrollmentServiceTests(unittest.TestCase):
         self.assertIsNone(service.registry.get_device("gway-004"))
         self.assertNotIn(KEY_DEVICE, self.config_path.read_text())
         self.assertNotIn("gway-004", self.hosts_path.read_text())
+
+    def test_operational_dns_name_cannot_be_enrolled_as_device(self):
+        dns, provider = self.dns_manager()
+        service = EnrollmentService(self.config, dns_manager=dns)
+        token, _ = service.registry.create_token(device_id="vpn")
+
+        with self.assertRaises(DNSConfigurationError):
+            service.enroll(
+                {
+                    "device_id": "vpn",
+                    "public_key": KEY_DEVICE,
+                    "token": token,
+                }
+            )
+
+        self.assertIsNone(service.registry.get_device("vpn"))
+        self.assertEqual(provider.records, {})
+        self.assertNotIn(KEY_DEVICE, self.config_path.read_text())
+        self.assertNotIn("vpn", self.hosts_path.read_text())
+
+        # The failed enrollment did not consume the one-time token.
+        with service.registry.transaction() as conn:
+            record, _digest, _created = service.registry.prepare_enrollment(
+                conn,
+                device_id="vpn",
+                public_key=KEY_DEVICE,
+                token=token,
+                base_domain="arthexis.com",
+            )
+            self.assertEqual(record["device_id"], "vpn")
 
 
 if __name__ == "__main__":
