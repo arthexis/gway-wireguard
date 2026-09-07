@@ -12,7 +12,9 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Validate shell syntax
         run: |
@@ -84,6 +86,34 @@ jobs:
           gway wireguard dns sync --help
           gway wireguard dns ensure --help
           gway wireguard dns delete --help
+
+      - name: Test first-class GWAY Sigils
+        shell: bash
+        run: |
+          export GWAY_DATA_HOME="${RUNNER_TEMP}/gway-data"
+          export GWAY_CONFIG_HOME="${RUNNER_TEMP}/gway-config"
+
+          lazy="$(gway wireguard status --interface '[project.name]' --wg-bin /bin/false --json)"
+          command="$(gway wireguard status --interface '[command.name]' --wg-bin /bin/false --json)"
+          eager="$(gway wireguard status --interface '%[cwd]' --wg-bin /bin/false --json)"
+          mixed="$(gway wg status --interface '%[cwd]/[project.name]/[command.name]' --wg-bin /bin/false --json)"
+
+          python3 - "$lazy" "$command" "$eager" "$mixed" <<'PY'
+          import json
+          import os
+          import sys
+
+          lazy, command, eager, mixed = (json.loads(value) for value in sys.argv[1:])
+          cwd = os.getcwd()
+
+          assert lazy["interface"] == "wireguard"
+          assert command["interface"] == "status"
+          assert eager["interface"] == cwd
+          assert mixed["interface"] == f"{cwd}/wireguard/status"
+
+          for result in (lazy, command, eager, mixed):
+              assert result["available"] is False
+          PY
 
       - name: Test client validation
         run: |
