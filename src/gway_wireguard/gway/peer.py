@@ -7,6 +7,8 @@ from pathlib import Path
 from gway_wireguard.peer_manager import PeerManager
 
 
-def managed(config_path: Path = Path("/etc/wireguard/gway.conf")) -> list[dict[str, str]]:
+def managed(
+    config_path: Path = Path("/etc/wireguard/gway.conf"),
+) -> list[dict[str, str]]:
     """List peers managed by gway-wireguard in the persistent config."""
     return PeerManager(config_path, apply_runtime=False).managed_peers()
