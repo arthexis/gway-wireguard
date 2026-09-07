@@ -9,7 +9,9 @@ from unittest.mock import patch
 from gway_wireguard.gway import server
 
 
-def completed(arguments: list[str], *, returncode: int = 0) -> subprocess.CompletedProcess[str]:
+def completed(
+    arguments: list[str], *, returncode: int = 0
+) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(
         arguments,
         returncode,
