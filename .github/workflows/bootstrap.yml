@@ -30,6 +30,7 @@ jobs:
             server/enroll_api.py \
             server/admin.py \
             src/gway_wireguard/__init__.py \
+            src/gway_wireguard/config.py \
             src/gway_wireguard/registry.py \
             src/gway_wireguard/hosts_manager.py \
             src/gway_wireguard/peer_manager.py \
