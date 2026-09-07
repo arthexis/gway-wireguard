@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gway-wireguard"
-version = "0.2.0"
+version = "0.3.0"
 description = "Secure WireGuard enrollment and routing for Gway devices"
 readme = "README.md"
 requires-python = ">=3.11"
