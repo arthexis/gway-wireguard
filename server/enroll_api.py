@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from gway_wireguard.diagnostics import log_enrollment_event, new_request_id
 from gway_wireguard.dns import (
     DNSConfigurationError,
     DNSManager,
@@ -182,29 +183,40 @@ class EnrollmentService:
                     status=400,
                 )
 
-        gateway_public_key = self._gateway_public_key()
-        gateway_ip = str(ipaddress.ip_address(self.config.gateway_address))
-        gateway_allowed = f"{gateway_ip}/32"
-        externally_reserved = self.peers.reserved_networks()
-
+        request_id = new_request_id()
+        device_id = str(payload["device_id"])
+        stage = "gateway_public_key"
         created = False
         record: dict[str, Any] | None = None
         dns_mutation: DNSMutation | None = None
+
         try:
+            gateway_public_key = self._gateway_public_key()
+            gateway_ip = str(ipaddress.ip_address(self.config.gateway_address))
+            gateway_allowed = f"{gateway_ip}/32"
+
+            stage = "peer_reservations"
+            externally_reserved = self.peers.reserved_networks()
+
             with self.registry.transaction() as conn:
+                stage = "registry_prepare"
                 record, digest, created = self.registry.prepare_enrollment(
                     conn,
-                    device_id=payload["device_id"],
+                    device_id=device_id,
                     public_key=payload["public_key"],
                     token=payload["token"],
                     base_domain=self.config.base_domain,
                     externally_reserved=externally_reserved,
                 )
+
+                stage = "peer_apply"
                 self.peers.ensure_peer(
                     str(record["device_id"]),
                     str(record["wireguard_public_key"]),
                     str(record["vpn_address"]),
                 )
+
+                stage = "hosts_sync"
                 devices = [
                     dict(row)
                     for row in conn.execute(
@@ -212,7 +224,9 @@ class EnrollmentService:
                     ).fetchall()
                 ]
                 self.hosts.sync(devices)
+
                 if self.dns is not None:
+                    stage = "dns_ensure"
                     hostname = str(record["hostname"])
                     self.dns.settings.validate_device_hostname(hostname)
                     dns_mutation = self.dns.ensure_record(
@@ -220,13 +234,31 @@ class EnrollmentService:
                         "A",
                         self.dns.settings.public_gateway_ip,
                     )
+
+                stage = "token_consume"
                 self.registry.consume_token(conn, digest)
-        except Exception:
+        except Exception as exc:
+            log_enrollment_event(
+                "enrollment_failed",
+                request_id=request_id,
+                device_id=device_id,
+                stage=stage,
+                error=exc,
+                payload=payload,
+            )
+
             if dns_mutation is not None and self.dns is not None:
                 try:
                     self.dns.restore(dns_mutation)
-                except Exception:
-                    pass
+                except Exception as rollback_exc:
+                    log_enrollment_event(
+                        "enrollment_rollback_failed",
+                        request_id=request_id,
+                        device_id=device_id,
+                        stage="dns_restore",
+                        error=rollback_exc,
+                        payload=payload,
+                    )
 
             if created and record is not None:
                 try:
@@ -234,15 +266,35 @@ class EnrollmentService:
                         str(record["device_id"]),
                         str(record["wireguard_public_key"]),
                     )
-                except Exception:
-                    pass
+                except Exception as rollback_exc:
+                    log_enrollment_event(
+                        "enrollment_rollback_failed",
+                        request_id=request_id,
+                        device_id=device_id,
+                        stage="peer_remove",
+                        error=rollback_exc,
+                        payload=payload,
+                    )
             try:
                 self.hosts.sync(self.registry.list_devices())
-            except Exception:
-                pass
+            except Exception as rollback_exc:
+                log_enrollment_event(
+                    "enrollment_rollback_failed",
+                    request_id=request_id,
+                    device_id=device_id,
+                    stage="hosts_restore",
+                    error=rollback_exc,
+                    payload=payload,
+                )
             raise
 
         assert record is not None
+        log_enrollment_event(
+            "enrollment_succeeded",
+            request_id=request_id,
+            device_id=device_id,
+            stage="complete",
+        )
         return {
             "version": 1,
             "device_id": record["device_id"],
