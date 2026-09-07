@@ -34,7 +34,7 @@ DNS-disabled installation as healthy. Before Phase 5, use the stricter readiness
 command against the intended production domain:
 
 ```bash
-sudo gway wireguard server ready --expected-domain gelectriic.com
+sudo gway wireguard server ready --expected-domain arthexis.com
 ```
 
 The readiness check reads the deployed `/etc/gway-wireguard/server.env` without
@@ -47,9 +47,9 @@ sourcing it and does not print credential contents. It verifies:
 - `vpn.<domain>` and `register.<domain>` match the configured base domain;
 - GoDaddy credential files exist and are non-empty when that provider is selected.
 
-This is intentionally separate from installation so generic `arthexis.com` /
-DNS-disabled bootstrap defaults remain usable for development while production
-validation fails clearly instead of looking Phase-5-ready.
+This is intentionally separate from installation so DNS-disabled bootstrap
+configuration remains usable for development while production validation fails
+clearly instead of looking Phase-5-ready.
 
 ## Enrollment diagnostics
 
@@ -92,15 +92,15 @@ bodies and WireGuard private keys are never logged.
 Keep the legacy `gway-001` peer unmanaged during this validation.
 
 1. Upgrade and deploy the current gateway code.
-2. Run `server ready --expected-domain gelectriic.com` and require a clean result.
+2. Run `server ready --expected-domain arthexis.com` and require a clean result.
 3. Verify `gway-001` remains present and reachable.
 4. Create a fresh device-scoped token for `gway-004`.
-5. Enroll `gway-004` through `https://register.gelectriic.com/v1/enroll`.
+5. Enroll `gway-004` through `https://register.arthexis.com/v1/enroll`.
 6. Confirm its registry-assigned VPN `/32`; do not infer the address from the
    device suffix.
 7. Verify WireGuard handshake and bidirectional gateway reachability.
 8. Verify `getent hosts gway-004` and SSH from the gateway over WireGuard.
-9. Verify `gway-004.gelectriic.com` points to the public gateway address.
+9. Verify `gway-004.arthexis.com` points to the public gateway address.
 10. Verify replay of the successfully consumed token is rejected.
 11. Run DNS ensure/sync repeatedly and verify idempotency.
 12. Exercise revocation on a disposable/test identity, or defer revocation of
