@@ -22,7 +22,9 @@ class EnrollmentServiceTests(unittest.TestCase):
         self.db = base / "registry.sqlite3"
         self.config_path = base / "gway.conf"
         self.gateway_key = base / "server.pub"
+        self.hosts_path = base / "hosts"
         self.gateway_key.write_text(KEY_GATEWAY + "\n")
+        self.hosts_path.write_text("127.0.0.1 localhost\n")
         self.config_path.write_text(
             "[Interface]\n"
             "Address = 10.90.0.1/24\n"
@@ -41,6 +43,7 @@ class EnrollmentServiceTests(unittest.TestCase):
             gateway_endpoint="54.161.177.151:51820",
             gateway_public_key_path=self.gateway_key,
             base_domain="arthexis.com",
+            hosts_path=self.hosts_path,
             bind_host="127.0.0.1",
             bind_port=8787,
             apply_runtime=False,
@@ -65,6 +68,9 @@ class EnrollmentServiceTests(unittest.TestCase):
         text = self.config_path.read_text()
         self.assertIn(KEY_MANUAL, text)
         self.assertIn(KEY_DEVICE, text)
+        hosts = self.hosts_path.read_text()
+        self.assertIn("127.0.0.1 localhost", hosts)
+        self.assertIn("10.90.0.3\tgway-004", hosts)
 
         with self.assertRaises(EnrollmentRejected):
             self.service.enroll(
@@ -86,6 +92,7 @@ class EnrollmentServiceTests(unittest.TestCase):
                     "token": token,
                 }
             )
+        self.assertNotIn("gway-004", self.hosts_path.read_text())
 
         self.config_path.write_text(
             "[Interface]\nAddress = 10.90.0.1/24\nPrivateKey = private\n"
@@ -98,6 +105,7 @@ class EnrollmentServiceTests(unittest.TestCase):
             }
         )
         self.assertEqual(response["vpn_address"], "10.90.0.2/32")
+        self.assertIn("10.90.0.2\tgway-004", self.hosts_path.read_text())
 
 
 if __name__ == "__main__":
