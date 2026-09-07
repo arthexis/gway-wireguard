@@ -26,7 +26,9 @@ class RegistryError(Exception):
 class EnrollmentRejected(RegistryError):
     """Enrollment request was invalid or unauthorized."""
 
-    def __init__(self, message: str, *, code: str = "enrollment_rejected", status: int = 400):
+    def __init__(
+        self, message: str, *, code: str = "enrollment_rejected", status: int = 400
+    ):
         super().__init__(message)
         self.code = code
         self.status = status
@@ -344,7 +346,9 @@ class Registry:
             ).fetchone()
         return dict(row) if row else None
 
-    def revoke(self, device_id: str, *, now: dt.datetime | None = None) -> dict[str, object]:
+    def revoke(
+        self, device_id: str, *, now: dt.datetime | None = None
+    ) -> dict[str, object]:
         validate_device_id(device_id)
         now = now or utc_now()
         self.initialize()

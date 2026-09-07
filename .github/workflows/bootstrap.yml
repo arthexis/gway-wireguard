@@ -9,7 +9,17 @@ permissions:
   contents: read
 
 jobs:
+  baseline:
+    name: ci-base baseline
+    uses: arthexis/ci-base/.github/workflows/consumer-ci.yml@v1
+    with:
+      install-command: python -m pip install -e .
+      test-command: python -m unittest discover -s tests/gway -p 'test_*.py' -v
+      lint-paths: src tests/gway
+      install-smoke-command: python -c "import gway_wireguard"
+
   validate:
+    name: WireGuard integration
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -67,9 +77,6 @@ jobs:
 
       - name: Install Python package
         run: python3 -m pip install -e .
-
-      - name: Test GWAY command namespace
-        run: python3 -m unittest discover -s tests/gway -p 'test_*.py' -v
 
       - name: Test base GWAY compatibility
         run: |
