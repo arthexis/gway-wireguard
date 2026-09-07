@@ -22,7 +22,9 @@ def status(interface: str = "gway", wg_bin: str = "wg") -> dict[str, object]:
         }
 
     if result.returncode != 0:
-        detail = result.stderr.strip() or f"{wg_bin} exited with status {result.returncode}"
+        detail = (
+            result.stderr.strip() or f"{wg_bin} exited with status {result.returncode}"
+        )
         return {
             "interface": interface,
             "available": False,
