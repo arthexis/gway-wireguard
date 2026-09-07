@@ -119,18 +119,14 @@ class GwayDNSCommandTests(unittest.TestCase):
         self.assertNotIn(("gway-004", "A"), self.provider.records)
 
     def test_revoke_deletes_dns_and_repeated_revoke_repairs_stale_dns(self) -> None:
-        self.provider.records[("gway-004", "A")] = [
-            DNSRecord("54.161.177.151", 600)
-        ]
+        self.provider.records[("gway-004", "A")] = [DNSRecord("54.161.177.151", 600)]
         admin_patch, settings_patch, manager_patch = self.patches()
         with admin_patch, settings_patch, manager_patch:
             first = revoke("gway-004")
         self.assertTrue(first["dns_changed"])
         self.assertNotIn(("gway-004", "A"), self.provider.records)
 
-        self.provider.records[("gway-004", "A")] = [
-            DNSRecord("54.161.177.151", 600)
-        ]
+        self.provider.records[("gway-004", "A")] = [DNSRecord("54.161.177.151", 600)]
         admin_patch, settings_patch, manager_patch = self.patches()
         with admin_patch, settings_patch, manager_patch:
             second = revoke("gway-004")

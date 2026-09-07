@@ -105,9 +105,7 @@ def dns_status() -> dict[str, object]:
         "ttl": settings.ttl,
         "vpn_hostname": settings.vpn_hostname,
         "register_hostname": settings.register_hostname,
-        "credentials_configured": bool(
-            settings.godaddy_key and settings.godaddy_secret
-        )
+        "credentials_configured": bool(settings.godaddy_key and settings.godaddy_secret)
         if settings.provider == "godaddy"
         else None,
     }

@@ -88,9 +88,7 @@ class DNSSettings:
         return cls(
             provider=provider,
             base_domain=base_domain,
-            public_gateway_ip=values.get(
-                "GWAY_PUBLIC_GATEWAY_IP", "54.161.177.151"
-            ),
+            public_gateway_ip=values.get("GWAY_PUBLIC_GATEWAY_IP", "54.161.177.151"),
             ttl=int(values.get("GWAY_DNS_TTL", "600")),
             vpn_hostname=values.get("GWAY_VPN_HOSTNAME", f"vpn.{base_domain}"),
             register_hostname=values.get(
@@ -123,7 +121,9 @@ class DNSSettings:
         for hostname in (self.vpn_hostname, self.register_hostname):
             self.relative_name(hostname)
         if self.vpn_hostname == self.register_hostname:
-            raise DNSConfigurationError("VPN and registration hostnames must be distinct")
+            raise DNSConfigurationError(
+                "VPN and registration hostnames must be distinct"
+            )
         if self.provider == "godaddy" and (
             not self.godaddy_key or not self.godaddy_secret
         ):

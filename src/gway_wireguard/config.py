@@ -35,7 +35,9 @@ def read_environment_file(path: str | Path) -> dict[str, str]:
         key, value = line.split("=", 1)
         key = key.strip()
         if not key or not key.replace("_", "A").isalnum() or not key[0].isalpha():
-            raise ValueError(f"invalid server environment key on line {number}: {source}")
+            raise ValueError(
+                f"invalid server environment key on line {number}: {source}"
+            )
         values[key] = _unquote(value.strip())
     return values
 
