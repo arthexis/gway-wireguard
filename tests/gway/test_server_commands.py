@@ -128,13 +128,38 @@ class ServerCommandTests(unittest.TestCase):
             )
             self.assertIn("DNS provider is disabled", result["issues"])
 
+    def test_ready_rejects_unsupported_dns_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            registry = base / "registry.sqlite3"
+            registry.write_bytes(b"sqlite")
+            env = base / "server.env"
+            env.write_text(
+                "\n".join(
+                    [
+                        f"GWAY_REGISTRY_DB={registry}",
+                        "GWAY_BASE_DOMAIN=arthexis.com",
+                        "GWAY_DNS_PROVIDER=goaddy",
+                        "GWAY_VPN_HOSTNAME=vpn.arthexis.com",
+                        "GWAY_REGISTER_HOSTNAME=register.arthexis.com",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = server.ready(expected_domain="arthexis.com", env_file=env)
+
+            self.assertFalse(result["ready"])
+            self.assertIn("unsupported DNS provider: goaddy", result["issues"])
+
     def test_ready_accepts_expected_godaddy_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             registry = base / "registry.sqlite3"
             registry.write_bytes(b"sqlite")
-            key = base / "godaddy.key"
-            secret = base / "godaddy.secret"
+            key = base / "custom-godaddy.key"
+            secret = base / "custom-godaddy.secret"
             key.write_text("key\n", encoding="utf-8")
             secret.write_text("secret\n", encoding="utf-8")
             env = base / "server.env"
@@ -159,6 +184,60 @@ class ServerCommandTests(unittest.TestCase):
             self.assertTrue(result["ready"])
             self.assertEqual(result["issues"], [])
             self.assertEqual(result["dns_provider"], "godaddy")
+
+    def test_ready_accepts_default_godaddy_credential_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            registry = base / "registry.sqlite3"
+            registry.write_bytes(b"sqlite")
+            (base / "godaddy.key").write_text("key\n", encoding="utf-8")
+            (base / "godaddy.secret").write_text("secret\n", encoding="utf-8")
+            env = base / "server.env"
+            env.write_text(
+                "\n".join(
+                    [
+                        f"GWAY_REGISTRY_DB={registry}",
+                        "GWAY_BASE_DOMAIN=arthexis.com",
+                        "GWAY_DNS_PROVIDER=godaddy",
+                        "GWAY_VPN_HOSTNAME=vpn.arthexis.com",
+                        "GWAY_REGISTER_HOSTNAME=register.arthexis.com",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = server.ready(expected_domain="arthexis.com", env_file=env)
+
+            self.assertTrue(result["ready"])
+            self.assertEqual(result["issues"], [])
+
+    def test_ready_accepts_direct_godaddy_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            registry = base / "registry.sqlite3"
+            registry.write_bytes(b"sqlite")
+            env = base / "server.env"
+            env.write_text(
+                "\n".join(
+                    [
+                        f"GWAY_REGISTRY_DB={registry}",
+                        "GWAY_BASE_DOMAIN=arthexis.com",
+                        "GWAY_DNS_PROVIDER=godaddy",
+                        "GWAY_VPN_HOSTNAME=vpn.arthexis.com",
+                        "GWAY_REGISTER_HOSTNAME=register.arthexis.com",
+                        "GWAY_GODADDY_KEY=key",
+                        "GWAY_GODADDY_SECRET=secret",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = server.ready(expected_domain="arthexis.com", env_file=env)
+
+            self.assertTrue(result["ready"])
+            self.assertEqual(result["issues"], [])
 
 
 if __name__ == "__main__":
