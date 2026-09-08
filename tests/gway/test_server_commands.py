@@ -276,7 +276,9 @@ class ServerCommandTests(unittest.TestCase):
     def test_ready_reports_malformed_environment(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             env = Path(directory) / "server.env"
-            env.write_text("GWAY_BASE_DOMAIN=arthexis.com\nnot-an-assignment\n", encoding="utf-8")
+            env.write_text(
+                "GWAY_BASE_DOMAIN=arthexis.com\nnot-an-assignment\n", encoding="utf-8"
+            )
 
             result = server.ready(expected_domain="arthexis.com", env_file=env)
 
