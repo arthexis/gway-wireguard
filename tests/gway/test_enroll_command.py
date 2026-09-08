@@ -44,6 +44,51 @@ class GwayEnrollCommandTests(unittest.TestCase):
         "gway_wireguard.gway._client_installer", return_value=Path("/repo/install.sh")
     )
     @patch("gway_wireguard.gway.subprocess.run")
+    @patch("gway_wireguard.gway.getpass.getpass", return_value=" prompted-token ")
+    def test_enroll_prompts_when_token_is_missing(
+        self, prompt, run, _installer
+    ) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            ["bash", "/repo/install.sh"],
+            0,
+            stdout="configured\n",
+            stderr="",
+        )
+
+        result = enroll(device="gway-004")
+
+        self.assertTrue(result["success"])
+        prompt.assert_called_once_with("Enrollment token: ")
+        command = run.call_args.args[0]
+        self.assertIn("--token", command)
+        self.assertIn("prompted-token", command)
+
+    @patch("gway_wireguard.gway.subprocess.run")
+    @patch("gway_wireguard.gway.getpass.getpass", return_value="   ")
+    def test_enroll_rejects_empty_interactive_token(self, prompt, run) -> None:
+        result = enroll()
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["exit_code"], 2)
+        self.assertEqual(result["error"], "no enrollment token provided")
+        prompt.assert_called_once_with("Enrollment token: ")
+        run.assert_not_called()
+
+    @patch("gway_wireguard.gway.subprocess.run")
+    @patch("gway_wireguard.gway.getpass.getpass", side_effect=EOFError)
+    def test_enroll_handles_missing_interactive_input(self, prompt, run) -> None:
+        result = enroll()
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["exit_code"], 2)
+        self.assertEqual(result["error"], "no enrollment token provided")
+        prompt.assert_called_once_with("Enrollment token: ")
+        run.assert_not_called()
+
+    @patch(
+        "gway_wireguard.gway._client_installer", return_value=Path("/repo/install.sh")
+    )
+    @patch("gway_wireguard.gway.subprocess.run")
     def test_enroll_accepts_explicit_device_and_url(self, run, _installer) -> None:
         run.return_value = subprocess.CompletedProcess(
             ["bash", "/repo/install.sh"],
