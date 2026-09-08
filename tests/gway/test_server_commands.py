@@ -239,6 +239,51 @@ class ServerCommandTests(unittest.TestCase):
             self.assertTrue(result["ready"])
             self.assertEqual(result["issues"], [])
 
+    def test_ready_rejects_quoted_empty_direct_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            registry = base / "registry.sqlite3"
+            registry.write_bytes(b"sqlite")
+            env = base / "server.env"
+            env.write_text(
+                "\n".join(
+                    [
+                        f"GWAY_REGISTRY_DB={registry}",
+                        "GWAY_BASE_DOMAIN=arthexis.com",
+                        "GWAY_DNS_PROVIDER=godaddy",
+                        "GWAY_VPN_HOSTNAME=vpn.arthexis.com",
+                        "GWAY_REGISTER_HOSTNAME=register.arthexis.com",
+                        'GWAY_GODADDY_KEY=""',
+                        "GWAY_GODADDY_SECRET=''",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = server.ready(expected_domain="arthexis.com", env_file=env)
+
+            self.assertFalse(result["ready"])
+            self.assertIn(
+                f"credential file missing or empty: {base / 'godaddy.key'}",
+                result["issues"],
+            )
+            self.assertIn(
+                f"credential file missing or empty: {base / 'godaddy.secret'}",
+                result["issues"],
+            )
+
+    def test_ready_reports_malformed_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / "server.env"
+            env.write_text("GWAY_BASE_DOMAIN=arthexis.com\nnot-an-assignment\n", encoding="utf-8")
+
+            result = server.ready(expected_domain="arthexis.com", env_file=env)
+
+            self.assertFalse(result["ready"])
+            self.assertEqual(len(result["issues"]), 1)
+            self.assertIn("invalid deployed environment:", result["issues"][0])
+
 
 if __name__ == "__main__":
     unittest.main()
