@@ -5,6 +5,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from gway_wireguard.config import read_environment_file
+
 _DEFAULT_ENV_FILE = Path("/etc/gway-wireguard/server.env")
 _SUPPORTED_DNS_PROVIDERS = {"none", "disabled", "godaddy"}
 
@@ -32,17 +34,6 @@ def _run_installer(*arguments: str) -> dict[str, object]:
         "output": result.stdout.strip(),
         "error": result.stderr.strip(),
     }
-
-
-def _read_env(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip()
-    return values
 
 
 def deploy() -> dict[str, object]:
@@ -74,7 +65,12 @@ def ready(
         }
 
     try:
-        values = _read_env(env_file)
+        values = read_environment_file(env_file)
+    except ValueError as exc:
+        return {
+            "ready": False,
+            "issues": [f"invalid deployed environment: {exc}"],
+        }
     except OSError as exc:
         return {
             "ready": False,
