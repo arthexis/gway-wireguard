@@ -9,9 +9,11 @@ from gway_wireguard.gway import enroll
 
 
 class GwayEnrollCommandTests(unittest.TestCase):
-    @patch("gway_wireguard.gway._client_installer", return_value=Path("/repo/install.sh"))
+    @patch(
+        "gway_wireguard.gway._client_installer", return_value=Path("/repo/install.sh")
+    )
     @patch("gway_wireguard.gway.subprocess.run")
-    def test_enroll_uses_gelectriic_default_without_cwd(self, run, _installer) -> None:
+    def test_enroll_uses_arthexis_default_without_cwd(self, run, _installer) -> None:
         run.return_value = subprocess.CompletedProcess(
             ["bash", "/repo/install.sh"],
             0,
@@ -31,14 +33,16 @@ class GwayEnrollCommandTests(unittest.TestCase):
                 "--token-file",
                 "/root/gway-enrollment.token",
                 "--enroll-url",
-                "https://register.gelectriic.com/v1/enroll",
+                "https://register.arthexis.com/v1/enroll",
             ],
             check=False,
             capture_output=True,
             text=True,
         )
 
-    @patch("gway_wireguard.gway._client_installer", return_value=Path("/repo/install.sh"))
+    @patch(
+        "gway_wireguard.gway._client_installer", return_value=Path("/repo/install.sh")
+    )
     @patch("gway_wireguard.gway.subprocess.run")
     def test_enroll_accepts_explicit_device_and_url(self, run, _installer) -> None:
         run.return_value = subprocess.CompletedProcess(
@@ -59,7 +63,9 @@ class GwayEnrollCommandTests(unittest.TestCase):
         self.assertIn("gway-004", command)
         self.assertIn("https://register.example.test/v1/enroll", command)
 
-    @patch("gway_wireguard.gway._client_installer", return_value=Path("/repo/install.sh"))
+    @patch(
+        "gway_wireguard.gway._client_installer", return_value=Path("/repo/install.sh")
+    )
     @patch("gway_wireguard.gway.subprocess.run")
     def test_enroll_reports_installer_failure(self, run, _installer) -> None:
         run.return_value = subprocess.CompletedProcess(

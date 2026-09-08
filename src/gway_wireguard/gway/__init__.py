@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-_DEFAULT_ENROLL_URL = "https://register.gelectriic.com/v1/enroll"
+_DEFAULT_ENROLL_URL = "https://register.arthexis.com/v1/enroll"
 
 
 def _client_installer() -> Path:
