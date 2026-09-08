@@ -60,8 +60,11 @@ class GwayEnrollCommandTests(unittest.TestCase):
         self.assertTrue(result["success"])
         prompt.assert_called_once_with("Enrollment token: ")
         command = run.call_args.args[0]
-        self.assertIn("--token", command)
-        self.assertIn("prompted-token", command)
+        self.assertNotIn("--token", command)
+        self.assertNotIn("prompted-token", command)
+        self.assertEqual(
+            run.call_args.kwargs["env"]["GWAY_ENROLL_TOKEN"], "prompted-token"
+        )
 
     @patch("gway_wireguard.gway.subprocess.run")
     @patch("gway_wireguard.gway.getpass.getpass", return_value="   ")
