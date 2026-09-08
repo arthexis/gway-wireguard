@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import getpass
+import os
 import subprocess
 from pathlib import Path
 
@@ -25,6 +26,7 @@ def enroll(
     enroll_url: str = _DEFAULT_ENROLL_URL,
 ) -> dict[str, object]:
     """Enroll this device, prompting securely when no token source is supplied."""
+    prompted_token = False
     if token_file is None and token is None:
         try:
             token = getpass.getpass("Enrollment token: ").strip()
@@ -37,22 +39,28 @@ def enroll(
                 "output": "",
                 "error": "no enrollment token provided",
             }
+        prompted_token = True
 
     command = ["bash", str(_client_installer())]
     if device:
         command.extend(["--device", device])
     if token_file is not None:
         command.extend(["--token-file", str(token_file)])
-    if token is not None:
+    if token is not None and not prompted_token:
         command.extend(["--token", token])
     command.extend(["--enroll-url", enroll_url])
 
-    result = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    run_kwargs: dict[str, object] = {
+        "check": False,
+        "capture_output": True,
+        "text": True,
+    }
+    if prompted_token:
+        environment = os.environ.copy()
+        environment["GWAY_ENROLL_TOKEN"] = token
+        run_kwargs["env"] = environment
+
+    result = subprocess.run(command, **run_kwargs)
     return {
         "success": result.returncode == 0,
         "exit_code": result.returncode,
