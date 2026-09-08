@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import getpass
 import subprocess
 from pathlib import Path
 
@@ -23,7 +24,20 @@ def enroll(
     token: str | None = None,
     enroll_url: str = _DEFAULT_ENROLL_URL,
 ) -> dict[str, object]:
-    """Enroll this device with the WireGuard gateway without changing directories."""
+    """Enroll this device, prompting securely when no token source is supplied."""
+    if token_file is None and token is None:
+        try:
+            token = getpass.getpass("Enrollment token: ").strip()
+        except EOFError:
+            token = ""
+        if not token:
+            return {
+                "success": False,
+                "exit_code": 2,
+                "output": "",
+                "error": "no enrollment token provided",
+            }
+
     command = ["bash", str(_client_installer())]
     if device:
         command.extend(["--device", device])
