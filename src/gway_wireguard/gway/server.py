@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 _DEFAULT_ENV_FILE = Path("/etc/gway-wireguard/server.env")
+_SUPPORTED_DNS_PROVIDERS = {"none", "disabled", "godaddy"}
 
 
 def _server_installer() -> Path:
@@ -96,7 +97,9 @@ def ready(
         )
     if not registry.is_file():
         issues.append(f"registry does not exist: {registry}")
-    if require_dns and provider in {"", "none", "disabled"}:
+    if provider not in _SUPPORTED_DNS_PROVIDERS:
+        issues.append(f"unsupported DNS provider: {provider}")
+    elif require_dns and provider in {"none", "disabled"}:
         issues.append("DNS provider is disabled")
     if domain:
         if vpn_hostname != f"vpn.{domain}":
@@ -110,12 +113,23 @@ def ready(
             )
 
     if provider == "godaddy":
-        for key in ("GWAY_GODADDY_KEY_FILE", "GWAY_GODADDY_SECRET_FILE"):
-            value = values.get(key, "").strip()
-            if not value:
-                issues.append(f"{key} is not configured")
+        credentials = (
+            ("GWAY_GODADDY_KEY", "GWAY_GODADDY_KEY_FILE", "godaddy.key"),
+            (
+                "GWAY_GODADDY_SECRET",
+                "GWAY_GODADDY_SECRET_FILE",
+                "godaddy.secret",
+            ),
+        )
+        for direct_name, file_name, default_name in credentials:
+            if values.get(direct_name, "").strip():
                 continue
-            credential = Path(value)
+            configured_path = values.get(file_name, "").strip()
+            credential = (
+                Path(configured_path)
+                if configured_path
+                else env_file.parent / default_name
+            )
             try:
                 if not credential.is_file() or credential.stat().st_size == 0:
                     issues.append(f"credential file missing or empty: {credential}")
