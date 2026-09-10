@@ -2,6 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from gway_wireguard.admin_ops import AdminSettings, revoke_device
 from gway_wireguard.peer_manager import PeerManager
@@ -64,6 +65,10 @@ class PeerRevocationContractTests(unittest.TestCase):
         )
         return record
 
+    def _revoke(self, device: str) -> dict[str, object]:
+        with patch.dict("os.environ", {"GWAY_DNS_PROVIDER": ""}, clear=False):
+            return revoke_device(device, settings=self.settings)
+
     def test_multiple_managed_peers_coexist_with_unmanaged_peer(self):
         first = self._enroll("gway-004", KEY_A)
         second = self._enroll("gway-005", KEY_B)
@@ -80,7 +85,7 @@ class PeerRevocationContractTests(unittest.TestCase):
         first = self._enroll("gway-004", KEY_A)
         second = self._enroll("gway-005", KEY_B)
 
-        result = revoke_device("gway-004", settings=self.settings)
+        result = self._revoke("gway-004")
         self.assertTrue(result["revoked"])
         self.assertFalse(result["already_revoked"])
 
@@ -93,6 +98,10 @@ class PeerRevocationContractTests(unittest.TestCase):
 
         revoked = self.registry.get_device("gway-004")
         active = self.registry.get_device("gway-005")
+        self.assertIsNotNone(revoked)
+        self.assertIsNotNone(active)
+        assert revoked is not None
+        assert active is not None
         self.assertEqual(revoked["enabled"], 0)
         self.assertEqual(active["enabled"], 1)
         self.assertEqual(active["vpn_address"], second["vpn_address"])
@@ -101,13 +110,16 @@ class PeerRevocationContractTests(unittest.TestCase):
     def test_revoke_is_idempotent(self):
         self._enroll("gway-004", KEY_A)
 
-        first = revoke_device("gway-004", settings=self.settings)
-        second = revoke_device("gway-004", settings=self.settings)
+        first = self._revoke("gway-004")
+        second = self._revoke("gway-004")
 
         self.assertFalse(first["already_revoked"])
         self.assertTrue(second["already_revoked"])
         self.assertNotIn(KEY_A, self.config.read_text())
-        self.assertEqual(self.registry.get_device("gway-004")["enabled"], 0)
+        record = self.registry.get_device("gway-004")
+        self.assertIsNotNone(record)
+        assert record is not None
+        self.assertEqual(record["enabled"], 0)
 
 
 if __name__ == "__main__":
