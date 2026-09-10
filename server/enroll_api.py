@@ -19,14 +19,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from gway_wireguard.diagnostics import log_enrollment_event, new_request_id
-from gway_wireguard.dns import (
-    DNSConfigurationError,
-    DNSManager,
-    DNSMutation,
-    DNSProviderError,
-    DNSSettings,
-)
 from hosts_manager import HostsManager, HostsManagerError
 from peer_manager import PeerManager, PeerManagerError
 from registry import (
@@ -35,6 +27,15 @@ from registry import (
     Registry,
     RegistryError,
     validate_public_key,
+)
+
+from gway_wireguard.diagnostics import log_enrollment_event, new_request_id
+from gway_wireguard.dns import (
+    DNSConfigurationError,
+    DNSManager,
+    DNSMutation,
+    DNSProviderError,
+    DNSSettings,
 )
 
 MAX_REQUEST_BYTES = 16 * 1024
@@ -338,7 +339,10 @@ class EnrollmentHandler(BaseHTTPRequestHandler):
         if not content_type.lower().startswith("application/json"):
             self._send_json(
                 415,
-                {"error": "unsupported_media_type", "message": "application/json required"},
+                {
+                    "error": "unsupported_media_type",
+                    "message": "application/json required",
+                },
             )
             return
         try:
@@ -368,7 +372,10 @@ class EnrollmentHandler(BaseHTTPRequestHandler):
         except AddressPoolExhausted:
             self._send_json(
                 503,
-                {"error": "address_pool_exhausted", "message": "VPN address pool exhausted"},
+                {
+                    "error": "address_pool_exhausted",
+                    "message": "VPN address pool exhausted",
+                },
             )
         except (
             RegistryError,
@@ -412,7 +419,9 @@ def serve(config: ServerConfig) -> None:
         )
 
     service = EnrollmentService(config)
-    server = ThreadingHTTPServer((config.bind_host, config.bind_port), EnrollmentHandler)
+    server = ThreadingHTTPServer(
+        (config.bind_host, config.bind_port), EnrollmentHandler
+    )
     server.enrollment_service = service  # type: ignore[attr-defined]
 
     if use_tls:

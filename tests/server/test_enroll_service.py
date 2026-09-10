@@ -11,13 +11,14 @@ SERVER = Path(__file__).resolve().parents[2] / "server"
 sys.path.insert(0, str(SERVER))
 
 from enroll_api import EnrollmentService, ServerConfig  # noqa: E402
+from registry import EnrollmentRejected  # noqa: E402
+
 from gway_wireguard.dns import (  # noqa: E402
     DNSConfigurationError,
     DNSManager,
     DNSRecord,
     DNSSettings,
 )
-from registry import EnrollmentRejected  # noqa: E402
 
 KEY_GATEWAY = "G" * 43 + "="
 KEY_MANUAL = "M" * 43 + "="
@@ -95,7 +96,9 @@ class EnrollmentServiceTests(unittest.TestCase):
         )
         return DNSManager(settings, provider=provider), provider
 
-    def test_enrollment_consumes_token_allocates_address_and_preserves_manual_peer(self):
+    def test_enrollment_consumes_token_allocates_address_and_preserves_manual_peer(
+        self,
+    ):
         token, _ = self.service.registry.create_token(device_id="gway-004")
         response = self.service.enroll(
             {

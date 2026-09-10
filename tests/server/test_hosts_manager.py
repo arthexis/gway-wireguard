@@ -43,12 +43,22 @@ class HostsManagerTests(unittest.TestCase):
         self.assertIn("10.90.0.10\tgway-010", text)
         self.assertNotIn("gway-003", text)
         self.assertLess(text.index("gway-002"), text.index("gway-010"))
-        self.assertFalse(self.manager.sync(
-            [
-                {"device_id": "gway-002", "vpn_address": "10.90.0.2/32", "enabled": 1},
-                {"device_id": "gway-010", "vpn_address": "10.90.0.10/32", "enabled": 1},
-            ]
-        ))
+        self.assertFalse(
+            self.manager.sync(
+                [
+                    {
+                        "device_id": "gway-002",
+                        "vpn_address": "10.90.0.2/32",
+                        "enabled": 1,
+                    },
+                    {
+                        "device_id": "gway-010",
+                        "vpn_address": "10.90.0.10/32",
+                        "enabled": 1,
+                    },
+                ]
+            )
+        )
 
     def test_sync_replaces_only_existing_managed_block(self):
         self.path.write_text(

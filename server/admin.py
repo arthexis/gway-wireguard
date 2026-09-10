@@ -7,6 +7,7 @@ import argparse
 import sys
 
 from enroll_api import ServerConfig
+
 from gway_wireguard.admin_ops import (
     AdminSettings,
     create_enrollment_token,
@@ -142,7 +143,13 @@ def main() -> int:
     config.validate()
     try:
         return args.func(config, args)
-    except (RegistryError, PeerManagerError, HostsManagerError, ValueError, OSError) as exc:
+    except (
+        RegistryError,
+        PeerManagerError,
+        HostsManagerError,
+        ValueError,
+        OSError,
+    ) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
