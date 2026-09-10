@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -29,6 +28,10 @@ class OneCommandBootstrapTests(unittest.TestCase):
         source = source.replace(
             'require_root() {\n    [[ "${EUID}" -eq 0 ]] || die "run this command as root (for example with sudo)"\n}',
             'require_root() { :; }',
+        )
+        source = source.replace(
+            'ensure_state_dir() {\n    install -d -o root -g root -m 700 "${STATE_DIR}"\n}',
+            'ensure_state_dir() { mkdir -p "${STATE_DIR}"; chmod 700 "${STATE_DIR}"; }',
         )
         start = source.index("apply_wireguard_config() {")
         end = source.index("\n\nprint_prepare_summary()", start)
