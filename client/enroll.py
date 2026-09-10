@@ -59,7 +59,9 @@ def validate_response(payload: object, expected_device_id: str) -> dict[str, str
         raise EnrollmentClientError("enrollment response device ID mismatch")
 
     hostname = payload.get("hostname")
-    if not isinstance(hostname, str) or not hostname.startswith(expected_device_id + "."):
+    if not isinstance(hostname, str) or not hostname.startswith(
+        expected_device_id + "."
+    ):
         raise EnrollmentClientError("invalid hostname in enrollment response")
 
     gateway_public_key = payload.get("gateway_public_key")
@@ -76,7 +78,9 @@ def validate_response(payload: object, expected_device_id: str) -> dict[str, str
     try:
         vpn_network = ipaddress.ip_network(vpn_address, strict=False)
     except ValueError as exc:
-        raise EnrollmentClientError("invalid VPN address in enrollment response") from exc
+        raise EnrollmentClientError(
+            "invalid VPN address in enrollment response"
+        ) from exc
     if vpn_network.version != 4 or vpn_network.prefixlen != 32:
         raise EnrollmentClientError("enrolled VPN address must be an IPv4 /32")
 

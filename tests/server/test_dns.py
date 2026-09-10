@@ -53,9 +53,7 @@ class DNSManagerTests(unittest.TestCase):
         self.manager = DNSManager(self.settings, provider=self.provider)
 
     def test_ensure_is_idempotent_and_restore_recovers_previous_state(self) -> None:
-        self.provider.records[("gway-004", "A")] = [
-            DNSRecord("192.0.2.10", 600)
-        ]
+        self.provider.records[("gway-004", "A")] = [DNSRecord("192.0.2.10", 600)]
         mutation = self.manager.ensure_record(
             "gway-004.arthexis.com", "A", "54.161.177.151"
         )
@@ -77,9 +75,7 @@ class DNSManagerTests(unittest.TestCase):
         )
 
     def test_sync_owns_operational_and_registry_device_records(self) -> None:
-        self.provider.records[("gway-005", "A")] = [
-            DNSRecord("54.161.177.151", 600)
-        ]
+        self.provider.records[("gway-005", "A")] = [DNSRecord("54.161.177.151", 600)]
         result = self.manager.sync_devices(
             [
                 {
@@ -109,9 +105,7 @@ class DNSManagerTests(unittest.TestCase):
 
     def test_device_cannot_claim_operational_dns_name(self) -> None:
         with self.assertRaises(DNSConfigurationError):
-            self.manager.sync_devices(
-                [{"hostname": "vpn.arthexis.com", "enabled": 1}]
-            )
+            self.manager.sync_devices([{"hostname": "vpn.arthexis.com", "enabled": 1}])
         self.assertEqual(self.provider.records, {})
         self.assertEqual(self.provider.replacements, [])
         self.assertEqual(self.provider.deletions, [])
@@ -149,18 +143,14 @@ class GoDaddyProviderTests(unittest.TestCase):
         get_request = open_url.call_args_list[0].args[0]
         self.assertEqual(get_request.get_method(), "GET")
         self.assertTrue(
-            get_request.full_url.endswith(
-                "/domains/arthexis.com/records/A/gway-004"
-            )
+            get_request.full_url.endswith("/domains/arthexis.com/records/A/gway-004")
         )
         self.assertEqual(
             get_request.get_header("Authorization"),
             "sso-key key:secret",
         )
 
-        provider.replace_records(
-            "gway-004", "A", [DNSRecord("54.161.177.151", 600)]
-        )
+        provider.replace_records("gway-004", "A", [DNSRecord("54.161.177.151", 600)])
         put_request = open_url.call_args_list[1].args[0]
         self.assertEqual(put_request.get_method(), "PUT")
         self.assertEqual(

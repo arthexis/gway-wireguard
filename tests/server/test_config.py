@@ -34,8 +34,7 @@ class ServerEnvironmentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "server.env"
             path.write_text(
-                "GWAY_DNS_PROVIDER=godaddy\n"
-                "GWAY_PUBLIC_GATEWAY_IP=192.0.2.10\n",
+                "GWAY_DNS_PROVIDER=godaddy\nGWAY_PUBLIC_GATEWAY_IP=192.0.2.10\n",
                 encoding="utf-8",
             )
             clean = {
