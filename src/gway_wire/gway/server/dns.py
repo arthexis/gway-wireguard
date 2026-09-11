@@ -1,4 +1,4 @@
-"""Public DNS administration commands exposed through base GWAY."""
+"""Server-side public DNS administration commands exposed through GWAY."""
 
 from __future__ import annotations
 

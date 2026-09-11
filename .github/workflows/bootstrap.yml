@@ -71,18 +71,23 @@ jobs:
           export GWAY_CONFIG_HOME="${RUNNER_TEMP}/gway-config"
           gway register .
           gway wire status --json
-          gway wire enroll --help
-          gway wire token create --help
-          gway wire device revoke --help
-          gway wire hosts sync --help
-          gway wire dns status --json
-          gway wire dns sync --help
-          gway wire dns ensure --help
-          gway wire dns delete --help
+          gway wire status --server --json
+          gway wire status --client --json
+          gway wire sync --help
+          gway wire client status --json
+          gway wire client sync --help
+          gway wire client enroll --help
+          gway wire server token --help
+          gway wire server devices --help
+          gway wire server revoke --help
+          gway wire server hosts sync --help
+          gway wire server dns status --json
+          gway wire server dns sync --help
+          gway wire server dns ensure --help
+          gway wire server dns delete --help
           gway wire server deploy --help
           gway wire server status --help
           gway wire server check --help
-          gway wire server ready --help
           gway wireguard status --json
           gway wg status --json
 
@@ -92,10 +97,10 @@ jobs:
           export GWAY_DATA_HOME="${RUNNER_TEMP}/gway-data"
           export GWAY_CONFIG_HOME="${RUNNER_TEMP}/gway-config"
 
-          lazy="$(gway wire status --interface '[project.name]' --wg-bin /bin/false --json)"
-          command="$(gway wire status --interface '[command.name]' --wg-bin /bin/false --json)"
-          eager="$(gway wire status --interface '%[cwd]' --wg-bin /bin/false --json)"
-          mixed="$(gway wg status --interface '%[cwd]/[project.name]/[command.name]' --wg-bin /bin/false --json)"
+          lazy="$(gway wire client status --interface '[project.name]' --json)"
+          command="$(gway wire client status --interface '[command.name]' --json)"
+          eager="$(gway wire client status --interface '%[cwd]' --json)"
+          mixed="$(gway wg client status --interface '%[cwd]/[project.name]/[command.name]' --json)"
 
           python3 - "$lazy" "$command" "$eager" "$mixed" <<'PY'
           import json
@@ -111,7 +116,7 @@ jobs:
           assert mixed["interface"] == f"{cwd}/wire/status"
 
           for result in (lazy, command, eager, mixed):
-              assert result["available"] is False
+              assert result["configured"] is False
           PY
 
       - name: Test client validation

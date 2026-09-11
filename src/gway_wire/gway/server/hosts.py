@@ -1,4 +1,4 @@
-"""Private-hostname commands exposed through GWAY."""
+"""Server-side private-hostname commands exposed through GWAY."""
 
 from __future__ import annotations
 
