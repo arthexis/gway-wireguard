@@ -63,6 +63,11 @@ def _normalize_domain(domain: str) -> str:
     return value
 
 
+def _effective_require_dns(require_dns: bool, dns: bool | None) -> bool:
+    """Resolve the short --dns/--no-dns alias over the explicit requirement."""
+    return require_dns if dns is None else dns
+
+
 def _readiness(
     domain: str | None = None,
     require_dns: bool = True,
@@ -247,12 +252,14 @@ def _domain_preflight(
 def deploy(
     domain: str,
     require_dns: bool = True,
+    dns: bool | None = None,
     env_file: Path = _DEFAULT_ENV_FILE,
     protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
     """Mutate this server into a deployment for DOMAIN, then validate readiness."""
     require_protocol(protocol)
     target = _normalize_domain(domain)
+    dns_required = _effective_require_dns(require_dns, dns)
     environment = os.environ.copy()
     environment["BASE_DOMAIN"] = target
     environment["VPN_HOSTNAME"] = f"vpn.{target}"
@@ -260,7 +267,7 @@ def deploy(
     result = _run_installer(env=environment)
     if not result["success"]:
         return {**result, "domain": target}
-    readiness = _readiness(domain=target, require_dns=require_dns, env_file=env_file)
+    readiness = _readiness(domain=target, require_dns=dns_required, env_file=env_file)
     return {**result, **readiness, "success": bool(readiness["ready"])}
 
 
@@ -278,24 +285,31 @@ def check(
     domain: str,
     source: bool = False,
     config: bool = False,
-    dns: bool = False,
+    dns_check: bool = False,
     peers: bool = False,
     require_dns: bool = True,
+    dns: bool | None = None,
     env_file: Path = _DEFAULT_ENV_FILE,
     protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
     """Validate DOMAIN non-mutatively, with selectable active checks."""
     require_protocol(protocol)
     target = _normalize_domain(domain)
-    selected = {"source": source, "config": config, "dns": dns, "peers": peers}
+    dns_required = _effective_require_dns(require_dns, dns)
+    selected = {
+        "source": source,
+        "config": config,
+        "dns": dns_check,
+        "peers": peers,
+    }
     if not any(selected.values()):
-        return _domain_preflight(target, env_file, require_dns)
+        return _domain_preflight(target, env_file, dns_required)
 
     results: dict[str, object] = {"domain": target}
     if selected["source"]:
         results["source"] = _run_installer("--check")
     if selected["config"]:
-        results["config"] = _domain_preflight(target, env_file, require_dns=False)
+        results["config"] = _domain_preflight(target, env_file, dns_required)
     if selected["dns"]:
         if env_file.is_file():
             results["dns"] = _dns_status_for(env_file)
@@ -323,9 +337,10 @@ def validate(
     domain: str,
     source: bool = False,
     config: bool = False,
-    dns: bool = False,
+    dns_check: bool = False,
     peers: bool = False,
     require_dns: bool = True,
+    dns: bool | None = None,
     env_file: Path = _DEFAULT_ENV_FILE,
     protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
@@ -334,9 +349,10 @@ def validate(
         domain,
         source=source,
         config=config,
-        dns=dns,
+        dns_check=dns_check,
         peers=peers,
         require_dns=require_dns,
+        dns=dns,
         env_file=env_file,
         protocol=protocol,
     )
