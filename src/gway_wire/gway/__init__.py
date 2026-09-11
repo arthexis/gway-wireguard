@@ -1,7 +1,7 @@
 """Public GWAY command namespace for gway-wire.
 
 Role-specific operations live under ``client`` and ``server``. Top-level
-``status`` and ``sync`` operate across all configured relationships.
+``status``, ``check``, and ``sync`` cover the common topology surface.
 """
 
 from __future__ import annotations
@@ -30,6 +30,32 @@ def status(
     )
 
 
+def check(
+    domain: str,
+    source: bool = False,
+    config: bool = False,
+    dns_check: bool = False,
+    peers: bool = False,
+    require_dns: bool = True,
+    dns: bool | None = None,
+    root: Path = topology._STATE_ROOT,
+    protocol: str = DEFAULT_PROTOCOL,
+) -> dict[str, object]:
+    """Validate a server domain without requiring the explicit server prefix."""
+    require_protocol(protocol)
+    return topology.check(
+        domain,
+        source=source,
+        config=config,
+        dns_check=dns_check,
+        peers=peers,
+        require_dns=require_dns,
+        dns=dns,
+        root=root,
+        protocol=protocol,
+    )
+
+
 def sync(
     domain: str | None = None,
     root: Path = topology._STATE_ROOT,
@@ -40,4 +66,4 @@ def sync(
     return topology.sync(domain=domain, root=root, protocol=protocol)
 
 
-__all__ = ["status", "sync"]
+__all__ = ["status", "check", "sync"]
