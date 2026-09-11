@@ -5,13 +5,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from gway_wireguard.admin_ops import AdminSettings
-from gway_wireguard.gway.device import list as device_list
-from gway_wireguard.gway.device import revoke
-from gway_wireguard.gway.hosts import sync
-from gway_wireguard.gway.token import create
-from gway_wireguard.peer_manager import PeerManager
-from gway_wireguard.registry import Registry
+from gway_wire.admin_ops import AdminSettings
+from gway_wire.gway import token
+from gway_wire.gway.device import list as device_list
+from gway_wire.gway.device import revoke
+from gway_wire.gway.hosts import sync
+from gway_wire.peer_manager import PeerManager
+from gway_wire.registry import Registry
 
 KEY_DEVICE = "D" * 43 + "="
 
@@ -44,13 +44,15 @@ class GwayAdminCommandTests(unittest.TestCase):
 
     def _enroll_fixture(self) -> None:
         registry = Registry(self.db)
-        token, _ = registry.create_token(device_id="gway-004", token="t" * 24)
+        enrollment_token, _ = registry.create_token(
+            device_id="gway-004", token="t" * 24
+        )
         with registry.transaction() as conn:
             record, digest, _created = registry.prepare_enrollment(
                 conn,
                 device_id="gway-004",
                 public_key=KEY_DEVICE,
-                token=token,
+                token=enrollment_token,
                 base_domain="arthexis.com",
             )
             PeerManager(self.wg_config, apply_runtime=False).ensure_peer(
@@ -60,9 +62,9 @@ class GwayAdminCommandTests(unittest.TestCase):
             )
             registry.consume_token(conn, digest)
 
-    def test_token_create_uses_shared_registry(self) -> None:
+    def test_token_uses_shared_registry(self) -> None:
         with patch.object(AdminSettings, "from_env", return_value=self.settings):
-            result = create(device="gway-004", ttl=120)
+            result = token(device="gway-004", ttl=120)
 
         self.assertEqual(result["device"], "gway-004")
         self.assertTrue(result["token"])
