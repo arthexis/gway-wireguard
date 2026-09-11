@@ -8,7 +8,7 @@ from pathlib import Path
 
 from gway_wire.admin_ops import sync_dns, sync_hosts
 from gway_wire.config import read_environment_file
-from gway_wire.gway import client
+from gway_wire.gway import client as client_commands
 from gway_wire.gway import server as server_commands
 
 _STATE_ROOT = Path("/etc/gway-wireguard")
@@ -83,16 +83,17 @@ def _server_environment(path: Path):
 
 def status(
     server: bool = False,
-    client_role: bool = False,
+    client: bool = False,
     root: Path = _STATE_ROOT,
 ) -> dict[str, dict[str, dict[str, object]]]:
     """Return status for every configured server and client relationship.
 
     With neither filter, both roles are included. ``--server`` restricts the
-    result to servers and ``--client-role`` restricts it to clients.
+    result to servers and ``--client`` restricts it to clients. Supplying both
+    is equivalent to the unfiltered aggregate view.
     """
-    include_servers = server or not (server or client_role)
-    include_clients = client_role or not (server or client_role)
+    include_servers = server or not (server or client)
+    include_clients = client or not (server or client)
     result: dict[str, dict[str, dict[str, object]]] = {}
 
     if include_servers:
@@ -108,7 +109,7 @@ def status(
     if include_clients:
         clients: dict[str, dict[str, object]] = {}
         for domain, state_dir in discover_clients(root).items():
-            entry = client.status(interface=_client_interface(state_dir))
+            entry = client_commands.status(interface=_client_interface(state_dir))
             entry["state_dir"] = str(state_dir)
             clients[domain] = entry
         result["clients"] = clients
@@ -136,7 +137,7 @@ def sync(
     for name, state_dir in discover_clients(root).items():
         if wanted is not None and name != wanted:
             continue
-        result["clients"][name] = client.sync(
+        result["clients"][name] = client_commands.sync(
             state_dir=state_dir,
             interface=_client_interface(state_dir),
         )
