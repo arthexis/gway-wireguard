@@ -7,11 +7,13 @@ import os
 import sqlite3
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from gway_wire.config import read_environment_file
 from gway_wire.gway.protocols import DEFAULT_PROTOCOL, require_protocol
 
 _DEFAULT_ENROLL_URL = "https://register.arthexis.com/v1/enroll"
+_DEFAULT_ENROLL_PATH = "/v1/enroll"
 _DEFAULT_STATE_DIR = Path("/etc/gway-wireguard")
 _DEFAULT_SERVER_ENV_FILE = Path("/etc/gway-wireguard/server.env")
 
@@ -48,6 +50,22 @@ def _enrollment_token_value(token: str | None, token_file: Path | None) -> str |
         except OSError:
             return None
     return os.environ.get("GWAY_ENROLL_TOKEN", "").strip() or None
+
+
+def _normalize_enroll_url(value: str) -> str:
+    """Normalize a domain/base URL and add the enrollment path when absent."""
+    candidate = value.strip()
+    if not candidate:
+        raise ValueError("enrollment URL cannot be empty")
+    if "://" not in candidate:
+        candidate = f"https://{candidate}"
+    parsed = urlsplit(candidate)
+    if parsed.scheme.lower() != "https" or not parsed.netloc:
+        raise ValueError("enrollment URL must use HTTPS")
+    path = parsed.path.rstrip("/")
+    if not path:
+        path = _DEFAULT_ENROLL_PATH
+    return urlunsplit(("https", parsed.netloc, path, parsed.query, parsed.fragment))
 
 
 def _token_was_issued_locally(
@@ -90,15 +108,16 @@ def enroll(
     token_file: Path | None = None,
     token: str | None = None,
     enroll_url: str = _DEFAULT_ENROLL_URL,
+    url: str | None = None,
     protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
-    """Enroll this client using a token created first with `gway wire server token` on the server.
+    """Enroll this client using a server-issued token and enrollment URL.
 
-    Run the token command on the server device, then run this command on the
-    separate client device. A token found in this device's own server registry
-    is rejected so a server cannot consume a token it created locally.
+    ``--url`` is a shorthand for ``--enroll-url``. A bare domain or HTTPS base
+    URL automatically receives ``/v1/enroll`` when no path is supplied.
     """
     require_protocol(protocol)
+    active_url = _normalize_enroll_url(url if url is not None else enroll_url)
     supplied_token = _enrollment_token_value(token, token_file)
     if supplied_token:
         try:
@@ -128,7 +147,7 @@ def enroll(
         command.extend(["--token-file", str(token_file)])
     if token is not None:
         command.extend(["--token", token])
-    command.extend(["--enroll-url", enroll_url])
+    command.extend(["--enroll-url", active_url])
 
     result = subprocess.run(
         command,

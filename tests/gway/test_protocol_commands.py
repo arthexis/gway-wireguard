@@ -10,6 +10,7 @@ from gway_wire.gway.server import dns, hosts
 
 PUBLIC_COMMANDS = (
     root.status,
+    root.check,
     root.sync,
     client.enroll,
     client.sync,

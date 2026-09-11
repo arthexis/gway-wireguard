@@ -119,6 +119,36 @@ def status(
     return result
 
 
+def check(
+    domain: str,
+    source: bool = False,
+    config: bool = False,
+    dns_provider: bool = False,
+    provider: bool = False,
+    peers: bool = False,
+    require_dns: bool = True,
+    dns: bool | None = None,
+    root: Path = _STATE_ROOT,
+    protocol: str = DEFAULT_PROTOCOL,
+) -> dict[str, object]:
+    """Run the server-domain check without requiring the explicit server prefix."""
+    protocol = require_protocol(protocol)
+    wanted = domain.strip().lower().rstrip(".")
+    env_file = discover_servers(root).get(wanted, root / "server.env")
+    return server_commands.check(
+        domain,
+        source=source,
+        config=config,
+        dns_provider=dns_provider,
+        provider=provider,
+        peers=peers,
+        require_dns=require_dns,
+        dns=dns,
+        env_file=env_file,
+        protocol=protocol,
+    )
+
+
 def sync(
     domain: str | None = None,
     root: Path = _STATE_ROOT,
