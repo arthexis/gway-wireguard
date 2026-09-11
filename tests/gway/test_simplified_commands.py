@@ -22,17 +22,23 @@ class SimplifiedCommandTests(unittest.TestCase):
 
     @patch("gway_wire.gway.server._server_installer")
     @patch("gway_wire.gway.server.subprocess.run")
-    def test_plain_server_deploy_only_runs_installer(self, run, installer) -> None:
+    def test_server_deploy_passes_positional_domain_to_installer_environment(
+        self, run, installer
+    ) -> None:
         path = Path("/managed/gway-wire/server/install.sh")
         installer.return_value = path
         run.return_value = subprocess.CompletedProcess(
-            ["bash", str(path)], 0, stdout="ok\n", stderr=""
+            ["bash", str(path)], 1, stdout="", stderr="failed\n"
         )
 
-        result = server.deploy()
+        result = server.deploy("example.com")
 
-        self.assertTrue(result["success"])
-        self.assertNotIn("ready", result)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["domain"], "example.com")
+        environment = run.call_args.kwargs["env"]
+        self.assertEqual(environment["BASE_DOMAIN"], "example.com")
+        self.assertEqual(environment["VPN_HOSTNAME"], "vpn.example.com")
+        self.assertEqual(environment["REGISTER_HOSTNAME"], "register.example.com")
 
     @patch("gway_wire.gway.server._server_installer")
     @patch("gway_wire.gway.server.subprocess.run")
@@ -64,11 +70,76 @@ class SimplifiedCommandTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            result = server.deploy(domain="arthexis.com", env_file=env)
+            result = server.deploy("arthexis.com", env_file=env)
 
         self.assertTrue(result["success"])
         self.assertTrue(result["ready"])
         self.assertEqual(result["domain"], "arthexis.com")
+
+    def test_server_check_reports_already_configured_domain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            registry = base / "registry.sqlite3"
+            registry.write_bytes(b"sqlite")
+            env = base / "server.env"
+            env.write_text(
+                "\n".join(
+                    [
+                        f"GWAY_REGISTRY_DB={registry}",
+                        "GWAY_BASE_DOMAIN=arthexis.com",
+                        "GWAY_DNS_PROVIDER=godaddy",
+                        "GWAY_VPN_HOSTNAME=vpn.arthexis.com",
+                        "GWAY_REGISTER_HOSTNAME=register.arthexis.com",
+                        "GWAY_GODADDY_KEY=key",
+                        "GWAY_GODADDY_SECRET=secret",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = server.check("arthexis.com", env_file=env)
+
+        self.assertTrue(result["configured"])
+        self.assertTrue(result["already_configured"])
+        self.assertTrue(result["deployable"])
+        self.assertTrue(result["ready"])
+
+    @patch("gway_wire.gway.server._run_installer", return_value={"success": True})
+    def test_server_check_preflights_fresh_domain_without_mutation(self, run_installer) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / "server.env"
+            result = server.check("example.com", env_file=env)
+
+        self.assertFalse(result["configured"])
+        self.assertFalse(result["already_configured"])
+        self.assertTrue(result["deployable"])
+        self.assertFalse(result["ready"])
+        run_installer.assert_called_once_with("--check")
+
+    def test_server_check_rejects_conflicting_configured_domain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / "server.env"
+            env.write_text(
+                "GWAY_BASE_DOMAIN=arthexis.com\nGWAY_DNS_PROVIDER=none\n",
+                encoding="utf-8",
+            )
+            result = server.check("example.com", env_file=env)
+
+        self.assertFalse(result["configured"])
+        self.assertFalse(result["deployable"])
+        self.assertEqual(result["configured_domain"], "arthexis.com")
+
+    def test_validate_is_check_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / "server.env"
+            with patch(
+                "gway_wire.gway.server._run_installer",
+                return_value={"success": True},
+            ):
+                checked = server.check("example.com", env_file=env)
+                validated = server.validate("example.com", env_file=env)
+        self.assertEqual(validated, checked)
 
     def test_server_token_is_direct_server_command(self) -> None:
         with (
@@ -167,20 +238,13 @@ class SimplifiedCommandTests(unittest.TestCase):
         self.assertNotIn("managed_peers", result)
 
     @patch("gway_wire.gway.server._run_installer", return_value={"success": True})
-    def test_server_check_defaults_to_all_checks(self, run_installer) -> None:
+    def test_server_check_selected_checks_still_work(self, run_installer) -> None:
         with tempfile.TemporaryDirectory() as directory:
             env = Path(directory) / "server.env"
-            env.write_text(
-                "GWAY_BASE_DOMAIN=arthexis.com\nGWAY_DNS_PROVIDER=none\n",
-                encoding="utf-8",
-            )
-            with patch(
-                "gway_wire.gway.server._dns_status_for",
-                return_value={"valid": True},
-            ):
-                result = server.check(env_file=env)
+            result = server.check("arthexis.com", source=True, env_file=env)
 
-        self.assertEqual(set(result), {"source", "config", "dns", "peers"})
+        self.assertEqual(result["domain"], "arthexis.com")
+        self.assertEqual(result["source"], {"success": True})
         run_installer.assert_called_once_with("--check")
 
     @patch("gway_wire.gway.client.subprocess.run")
