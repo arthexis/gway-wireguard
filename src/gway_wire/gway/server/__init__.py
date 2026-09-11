@@ -105,7 +105,9 @@ def _readiness(
                 continue
             configured_path = values.get(file_name, "").strip()
             credential = (
-                Path(configured_path) if configured_path else env_file.parent / default_name
+                Path(configured_path)
+                if configured_path
+                else env_file.parent / default_name
             )
             try:
                 if not credential.is_file() or credential.stat().st_size == 0:
