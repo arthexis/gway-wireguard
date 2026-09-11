@@ -60,12 +60,16 @@ def _token_was_issued_locally(
     try:
         values = read_environment_file(active_env)
     except (OSError, ValueError) as exc:
-        raise LocalTokenValidationError("local server configuration is unreadable") from exc
+        raise LocalTokenValidationError(
+            "local server configuration is unreadable"
+        ) from exc
     registry = Path(
         values.get("GWAY_REGISTRY_DB", "/var/lib/gway-wireguard/registry.sqlite3")
     )
     if not registry.is_file():
-        raise LocalTokenValidationError("configured local server registry is unavailable")
+        raise LocalTokenValidationError(
+            "configured local server registry is unavailable"
+        )
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     try:
         with sqlite3.connect(registry) as connection:
@@ -74,7 +78,9 @@ def _token_was_issued_locally(
                 (digest,),
             ).fetchone()
     except (OSError, sqlite3.Error) as exc:
-        raise LocalTokenValidationError("configured local server registry cannot be read") from exc
+        raise LocalTokenValidationError(
+            "configured local server registry cannot be read"
+        ) from exc
     return row is not None
 
 
@@ -137,37 +143,67 @@ def enroll(
 
 def sync(
     state_dir: Path = _DEFAULT_STATE_DIR,
+    interface: str = "gway",
 ) -> dict[str, object]:
-    """Reconcile the configured client relationship from persisted state."""
-    return status(state_dir=state_dir, debug=True)
+    """Reconcile a persisted client configuration with the live WireGuard state."""
+    env = os.environ.copy()
+    env["STATE_DIR"] = str(state_dir)
+    env["WG_INTERFACE"] = interface
+    result = subprocess.run(
+        ["bash", str(_client_installer())],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    return {
+        "success": result.returncode == 0,
+        "exit_code": result.returncode,
+        "output": result.stdout.strip(),
+        "error": result.stderr.strip(),
+        "interface": interface,
+        "state_dir": str(state_dir),
+    }
 
 
 def status(
-    interface: str = "gway",
     state_dir: Path = _DEFAULT_STATE_DIR,
+    interface: str = "gway",
     debug: bool = False,
+    wg_bin: str = "wg",
 ) -> dict[str, object]:
-    """Return cheap persisted client status, with optional live diagnostics."""
+    """Return persisted client configuration; optionally include live debug detail."""
     configured = (state_dir / "client-address").is_file() or (
         state_dir / "server-endpoint"
     ).is_file()
     result: dict[str, object] = {
         "configured": configured,
+        "device": _read_state(state_dir, "device-id"),
+        "domain": _read_state(state_dir, "domain"),
+        "hostname": _read_state(state_dir, "hostname"),
+        "vpn_address": _read_state(state_dir, "client-address"),
+        "server_endpoint": _read_state(state_dir, "server-endpoint"),
+        "server_tunnel_ip": _read_state(state_dir, "server-tunnel-ip"),
         "interface": interface,
-        "address": _read_state(state_dir, "client-address"),
-        "endpoint": _read_state(state_dir, "server-endpoint"),
-        "domain": _read_state(state_dir, "server-domain"),
+        "state_dir": str(state_dir),
     }
     if not debug:
         return result
 
-    live = subprocess.run(
-        ["wg", "show", interface],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    result["available"] = live.returncode == 0
-    result["wireguard"] = live.stdout.strip() if live.returncode == 0 else ""
-    result["error"] = live.stderr.strip() if live.returncode != 0 else ""
+    try:
+        live = subprocess.run(
+            [wg_bin, "show", interface],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        result["debug"] = {"available": False, "detail": str(exc)}
+        return result
+
+    result["debug"] = {
+        "available": live.returncode == 0,
+        "output": live.stdout.strip() if live.returncode == 0 else "",
+        "detail": live.stderr.strip() if live.returncode != 0 else "",
+    }
     return result
