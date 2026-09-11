@@ -90,7 +90,7 @@ def status(
 
     With neither filter, both roles are included. ``--server`` restricts the
     result to servers and ``--client`` restricts it to clients. Supplying both
-    is equivalent to the unfiltered aggregate view.
+    includes both roles.
     """
     include_servers = server or not (server or client)
     include_clients = client or not (server or client)
