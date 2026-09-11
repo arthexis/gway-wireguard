@@ -50,7 +50,8 @@ jobs:
           gway wire server check example.com --no-dns --protocol wireguard --json
           gway wire server check example.com --dns-provider --no-dns --help
           gway wire server validate example.com --provider --no-dns --help
-          gway wire server deploy example.com --no-dns --help
+          gway wire server deploy example.com --dns-provider godaddy --help
+          gway wire server deploy example.com --provider godaddy --help
           gway wire server token --help
           gway wire server dns status --protocol wireguard --help
           gway wire server hosts sync --protocol wireguard --help
