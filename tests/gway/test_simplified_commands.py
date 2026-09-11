@@ -81,10 +81,16 @@ class SimplifiedCommandTests(unittest.TestCase):
         create.assert_called_once_with(device="gway-004", ttl=120)
 
     def test_server_devices_and_revoke_are_flat_commands(self) -> None:
-        with patch("gway_wire.gway.server.list_devices", return_value=[{"device_id": "gway-004"}]) as listed:
+        with patch(
+            "gway_wire.gway.server.list_devices",
+            return_value=[{"device_id": "gway-004"}],
+        ) as listed:
             self.assertEqual(server.devices()[0]["device_id"], "gway-004")
             listed.assert_called_once_with()
-        with patch("gway_wire.gway.server.revoke_device", return_value={"revoked": True}) as revoke:
+        with patch(
+            "gway_wire.gway.server.revoke_device",
+            return_value={"revoked": True},
+        ) as revoke:
             self.assertTrue(server.revoke("gway-004")["revoked"])
             revoke.assert_called_once_with("gway-004")
 
@@ -120,8 +126,14 @@ class SimplifiedCommandTests(unittest.TestCase):
     def test_server_check_defaults_to_all_checks(self, run_installer) -> None:
         with tempfile.TemporaryDirectory() as directory:
             env = Path(directory) / "server.env"
-            env.write_text("GWAY_BASE_DOMAIN=arthexis.com\nGWAY_DNS_PROVIDER=none\n", encoding="utf-8")
-            with patch("gway_wire.gway.server.dns_status", return_value={"valid": True}):
+            env.write_text(
+                "GWAY_BASE_DOMAIN=arthexis.com\nGWAY_DNS_PROVIDER=none\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "gway_wire.gway.server._dns_status_for",
+                return_value={"valid": True},
+            ):
                 result = server.check(env_file=env)
 
         self.assertEqual(set(result), {"source", "config", "dns", "peers"})
@@ -131,8 +143,14 @@ class SimplifiedCommandTests(unittest.TestCase):
     def test_client_status_is_static_unless_debug_requested(self, run) -> None:
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory)
-            (state / "client-address").write_text("10.90.0.2/32\n", encoding="utf-8")
-            (state / "server-endpoint").write_text("vpn.example.com:51820\n", encoding="utf-8")
+            (state / "client-address").write_text(
+                "10.90.0.2/32\n",
+                encoding="utf-8",
+            )
+            (state / "server-endpoint").write_text(
+                "vpn.example.com:51820\n",
+                encoding="utf-8",
+            )
             result = client.status(state_dir=state)
 
         self.assertTrue(result["configured"])
@@ -158,8 +176,14 @@ class SimplifiedCommandTests(unittest.TestCase):
             client_dir = root_dir / "clients" / "example.com"
             client_dir.mkdir(parents=True)
             (client_dir / "domain").write_text("example.com\n", encoding="utf-8")
-            (client_dir / "interface").write_text("gway-example\n", encoding="utf-8")
-            (client_dir / "client-address").write_text("10.90.1.2/32\n", encoding="utf-8")
+            (client_dir / "interface").write_text(
+                "gway-example\n",
+                encoding="utf-8",
+            )
+            (client_dir / "client-address").write_text(
+                "10.90.1.2/32\n",
+                encoding="utf-8",
+            )
 
             combined = root.status(root=root_dir)
             servers_only = root.status(server=True, root=root_dir)
