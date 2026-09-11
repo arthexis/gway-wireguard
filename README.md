@@ -17,7 +17,7 @@ gway wire sync
 gway wire sync --domain arthexis.com
 ```
 
-`status` returns maps keyed by domain for both configured roles:
+`status` is deliberately cheap: it reads configured state and returns maps keyed by domain for both configured roles without running validation or reconciliation work:
 
 ```text
 {
@@ -26,7 +26,7 @@ gway wire sync --domain arthexis.com
 }
 ```
 
-With neither filter, both maps are returned. `--server` or `--client` restricts the result to that role; supplying both includes both. `sync` reconciles every configured relationship on the host, while `--domain` limits reconciliation to that domain regardless of whether this host is acting as a client, server, or both.
+With neither filter, both maps are returned. `--server` or `--client` restricts the result to that role; supplying both includes both. `--debug` adds deeper diagnostic detail, including managed peer information and live client WireGuard output. `sync` reconciles every configured relationship on the host, while `--domain` limits reconciliation to that domain regardless of whether this host is acting as a client, server, or both.
 
 The topology reader supports the existing single-instance state under `/etc/gway-wireguard` and domain-scoped state for multiple relationships under `/etc/gway-wireguard/servers/*.env` and `/etc/gway-wireguard/clients/<domain>/`.
 
@@ -42,9 +42,8 @@ Server-side lifecycle and administration commands operate on gateway state:
 
 ```bash
 gway wire server token --device gway-004
-gway wire server device list
-gway wire server device revoke gway-004
-gway wire server peer managed
+gway wire server devices
+gway wire server revoke gway-004
 gway wire server hosts sync
 
 gway wire server dns status
@@ -52,6 +51,8 @@ gway wire server dns sync
 gway wire server dns ensure gway-004
 gway wire server dns delete gway-004
 ```
+
+`server status` only reads the configured server snapshot. `server check` actively validates one or more aspects of the server. With no check flags it runs every available check; individual checks can be selected with `--source`, `--config`, `--dns`, or `--peers`. Managed peer inspection is intentionally hidden from the ordinary command tree and is available through `server check --peers` or `status --debug`.
 
 Gateway deployment can optionally enforce production-domain readiness in the same command:
 
@@ -71,7 +72,7 @@ gway wire client status --interface '%[cwd]/[project.name]'
 
 Project and command routing remain literal, so `wire client status` selects the command before its argument values are interpolated.
 
-The current implementation is the WireGuard backend. `client status` reports one live WireGuard interface without exposing private key material. Top-level `status` aggregates all discovered relationships. Token, device, peer, private-hostname, and DNS operations live under `server` and delegate to the same packaged implementation used by the enrollment service and compatibility server scripts.
+The current implementation is the WireGuard backend. Client and server `status` commands read persisted configuration by default, while `--debug` adds live/diagnostic detail. Top-level `status` aggregates all discovered relationships. Server token, device administration, private-hostname, and DNS operations delegate to the same packaged implementation used by the enrollment service and compatibility server scripts.
 
 The canonical Python namespace is `gway_wire`. The previous `gway_wireguard` namespace remains packaged during the transition so existing imports do not break immediately.
 
