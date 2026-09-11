@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
 
+# Repository-local integration workflow; shared CI definitions are copied in, not invoked.
 jobs:
   validate:
     name: WireGuard integration
