@@ -20,6 +20,7 @@ def _client_installer() -> Path:
 
 
 def _read_state(state_dir: Path, name: str) -> str | None:
+    """Read one persisted client state value, returning None when absent."""
     try:
         value = (state_dir / name).read_text(encoding="utf-8").strip()
     except OSError:
@@ -89,7 +90,9 @@ def status(
     wg_bin: str = "wg",
 ) -> dict[str, object]:
     """Return persisted client configuration; optionally include live debug detail."""
-    configured = (state_dir / "client-address").is_file() or (state_dir / "server-endpoint").is_file()
+    configured = (state_dir / "client-address").is_file() or (
+        state_dir / "server-endpoint"
+    ).is_file()
     result: dict[str, object] = {
         "configured": configured,
         "device": _read_state(state_dir, "device-id"),
