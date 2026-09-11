@@ -70,7 +70,12 @@ jobs:
           export GWAY_DATA_HOME="${RUNNER_TEMP}/gway-data"
           export GWAY_CONFIG_HOME="${RUNNER_TEMP}/gway-config"
           gway register .
+          gway wire status --json
+          gway wire status --server --json
+          gway wire status --client --json
+          gway wire sync --help
           gway wire client status --json
+          gway wire client sync --help
           gway wire client enroll --help
           gway wire server token --help
           gway wire server device revoke --help
@@ -83,8 +88,8 @@ jobs:
           gway wire server deploy --help
           gway wire server status --help
           gway wire server check --help
-          gway wireguard client status --json
-          gway wg client status --json
+          gway wireguard status --json
+          gway wg status --json
 
       - name: Test first-class GWAY Sigils
         shell: bash
