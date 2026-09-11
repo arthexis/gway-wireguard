@@ -19,6 +19,7 @@ from gway_wire.peer_manager import PeerManager
 
 _DEFAULT_ENV_FILE = Path("/etc/gway-wireguard/server.env")
 _SUPPORTED_DNS_PROVIDERS = {"none", "disabled", "godaddy"}
+_DEPLOY_DNS_PROVIDERS = {"godaddy"}
 _DOMAIN_RE = re.compile(
     r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
@@ -66,6 +67,46 @@ def _normalize_domain(domain: str) -> str:
 def _effective_require_dns(require_dns: bool, dns: bool | None) -> bool:
     """Resolve the short --dns/--no-dns alias over the explicit requirement."""
     return require_dns if dns is None else dns
+
+
+def _resolve_deploy_provider(
+    dns_provider: str | None,
+    provider: str | None,
+) -> str | None:
+    """Resolve deploy-time provider aliases before any host mutation."""
+    explicit = [value.strip().lower() for value in (dns_provider, provider) if value]
+    if not explicit:
+        return None
+    if len(set(explicit)) > 1:
+        raise ValueError("--dns-provider and --provider must select the same provider")
+    selected = explicit[0]
+    if selected not in _DEPLOY_DNS_PROVIDERS:
+        supported = ", ".join(sorted(_DEPLOY_DNS_PROVIDERS))
+        raise ValueError(
+            f"unsupported DNS provider {selected!r}; supported providers: {supported}"
+        )
+    return selected
+
+
+def _set_existing_dns_provider(env_file: Path, provider: str) -> str | None:
+    """Set provider in an existing deployment and return content for rollback."""
+    if not env_file.is_file():
+        return None
+    original = env_file.read_text(encoding="utf-8")
+    lines = original.splitlines()
+    replacement = f"GWAY_DNS_PROVIDER={provider}"
+    replaced = False
+    updated: list[str] = []
+    for line in lines:
+        if line.startswith("GWAY_DNS_PROVIDER="):
+            updated.append(replacement)
+            replaced = True
+        else:
+            updated.append(line)
+    if not replaced:
+        updated.append(replacement)
+    env_file.write_text("\n".join(updated) + "\n", encoding="utf-8")
+    return original
 
 
 def _readiness(
@@ -253,22 +294,39 @@ def deploy(
     domain: str,
     require_dns: bool = True,
     dns: bool | None = None,
+    dns_provider: str | None = None,
+    provider: str | None = None,
     env_file: Path = _DEFAULT_ENV_FILE,
     protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
     """Mutate this server into a deployment for DOMAIN, then validate readiness."""
     require_protocol(protocol)
     target = _normalize_domain(domain)
+    selected_provider = _resolve_deploy_provider(dns_provider, provider)
     dns_required = _effective_require_dns(require_dns, dns)
     environment = os.environ.copy()
     environment["BASE_DOMAIN"] = target
     environment["VPN_HOSTNAME"] = f"vpn.{target}"
     environment["REGISTER_HOSTNAME"] = f"register.{target}"
+    if selected_provider is not None:
+        environment["DNS_PROVIDER"] = selected_provider
+
+    original_env: str | None = None
+    if selected_provider is not None:
+        original_env = _set_existing_dns_provider(env_file, selected_provider)
     result = _run_installer(env=environment)
     if not result["success"]:
-        return {**result, "domain": target}
+        if original_env is not None:
+            env_file.write_text(original_env, encoding="utf-8")
+        return {**result, "domain": target, "dns_provider": selected_provider}
+
     readiness = _readiness(domain=target, require_dns=dns_required, env_file=env_file)
-    return {**result, **readiness, "success": bool(readiness["ready"])}
+    return {
+        **result,
+        **readiness,
+        "success": bool(readiness["ready"]),
+        "dns_provider": selected_provider or readiness.get("dns_provider"),
+    }
 
 
 def status(
