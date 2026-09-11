@@ -84,35 +84,29 @@ def _server_environment(path: Path):
 def status(
     server: bool = False,
     client: bool = False,
+    debug: bool = False,
     root: Path = _STATE_ROOT,
 ) -> dict[str, dict[str, dict[str, object]]]:
-    """Return status for every configured server and client relationship.
-
-    With neither filter, both roles are included. ``--server`` restricts the
-    result to servers and ``--client`` restricts it to clients. Supplying both
-    includes both roles.
-    """
+    """Return configured topology snapshots, optionally including debug detail."""
     include_servers = server or not (server or client)
     include_clients = client or not (server or client)
     result: dict[str, dict[str, dict[str, object]]] = {}
 
     if include_servers:
-        servers: dict[str, dict[str, object]] = {}
-        for domain, env_file in discover_servers(root).items():
-            servers[domain] = server_commands._readiness(
-                domain=domain,
-                require_dns=False,
-                env_file=env_file,
-            )
-        result["servers"] = servers
+        result["servers"] = {
+            domain: server_commands.status(env_file=env_file, debug=debug)
+            for domain, env_file in discover_servers(root).items()
+        }
 
     if include_clients:
-        clients: dict[str, dict[str, object]] = {}
-        for domain, state_dir in discover_clients(root).items():
-            entry = client_commands.status(interface=_client_interface(state_dir))
-            entry["state_dir"] = str(state_dir)
-            clients[domain] = entry
-        result["clients"] = clients
+        result["clients"] = {
+            domain: client_commands.status(
+                state_dir=state_dir,
+                interface=_client_interface(state_dir),
+                debug=debug,
+            )
+            for domain, state_dir in discover_clients(root).items()
+        }
 
     return result
 
