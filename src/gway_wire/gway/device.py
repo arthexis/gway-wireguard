@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import builtins
 
-from gway_wireguard.admin_ops import list_devices, revoke_device
+from gway_wire.admin_ops import list_devices, revoke_device
 
 
 def list() -> builtins.list[dict[str, object]]:
