@@ -19,6 +19,14 @@ def _client_installer() -> Path:
     raise RuntimeError("could not locate gway-wire client installer")
 
 
+def _read_state(state_dir: Path, name: str) -> str | None:
+    try:
+        value = (state_dir / name).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return value or None
+
+
 def enroll(
     device: str | None = None,
     token_file: Path | None = None,
@@ -74,32 +82,42 @@ def sync(
     }
 
 
-def status(interface: str = "gway", wg_bin: str = "wg") -> dict[str, object]:
-    """Show live client WireGuard status without exposing private key material."""
+def status(
+    state_dir: Path = _DEFAULT_STATE_DIR,
+    interface: str = "gway",
+    debug: bool = False,
+    wg_bin: str = "wg",
+) -> dict[str, object]:
+    """Return persisted client configuration; optionally include live debug detail."""
+    configured = (state_dir / "client-address").is_file() or (state_dir / "server-endpoint").is_file()
+    result: dict[str, object] = {
+        "configured": configured,
+        "device": _read_state(state_dir, "device-id"),
+        "domain": _read_state(state_dir, "domain"),
+        "hostname": _read_state(state_dir, "hostname"),
+        "vpn_address": _read_state(state_dir, "client-address"),
+        "server_endpoint": _read_state(state_dir, "server-endpoint"),
+        "server_tunnel_ip": _read_state(state_dir, "server-tunnel-ip"),
+        "interface": interface,
+        "state_dir": str(state_dir),
+    }
+    if not debug:
+        return result
+
     try:
-        result = subprocess.run(
+        live = subprocess.run(
             [wg_bin, "show", interface],
             check=False,
             capture_output=True,
             text=True,
         )
     except OSError as exc:
-        return {
-            "interface": interface,
-            "available": False,
-            "detail": str(exc),
-        }
+        result["debug"] = {"available": False, "detail": str(exc)}
+        return result
 
-    if result.returncode != 0:
-        detail = result.stderr.strip() or f"{wg_bin} exited with status {result.returncode}"
-        return {
-            "interface": interface,
-            "available": False,
-            "detail": detail,
-        }
-
-    return {
-        "interface": interface,
-        "available": True,
-        "output": result.stdout.strip(),
+    result["debug"] = {
+        "available": live.returncode == 0,
+        "output": live.stdout.strip() if live.returncode == 0 else "",
+        "detail": live.stderr.strip() if live.returncode != 0 else "",
     }
+    return result
