@@ -39,11 +39,15 @@ jobs:
         run: |
           gway register .
           gway info wire --json
-          gway wire status --json
-          gway wireguard status --json
-          gway wg status --json
+          gway wire status --protocol wireguard --json
+          gway wireguard status --protocol wireguard --json
+          gway wg status --protocol wireguard --json
+          gway wire client status --protocol wireguard --json
           gway wire client enroll --help
+          gway wire server status --protocol wireguard --help
           gway wire server token --help
+          gway wire server dns status --protocol wireguard --help
+          gway wire server hosts sync --protocol wireguard --help
 
       - name: Exercise managed Gway install from main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -53,6 +57,6 @@ jobs:
         run: |
           gway install wire
           gway info wire --json
-          gway wire status --json
-          gway wireguard status --json
-          gway wg status --json
+          gway wire status --protocol wireguard --json
+          gway wireguard status --protocol wireguard --json
+          gway wg status --protocol wireguard --json
