@@ -15,6 +15,10 @@ _DEFAULT_STATE_DIR = Path("/etc/gway-wireguard")
 _DEFAULT_SERVER_ENV_FILE = Path("/etc/gway-wireguard/server.env")
 
 
+class LocalTokenValidationError(RuntimeError):
+    """Raised when configured local server state cannot validate a token."""
+
+
 def _client_installer() -> Path:
     """Locate the checkout's client installer without depending on caller cwd."""
     for parent in Path(__file__).resolve().parents:
@@ -49,19 +53,19 @@ def _token_was_issued_locally(
     token: str,
     env_file: Path | None = None,
 ) -> bool:
-    """Return whether this host's server registry contains the supplied token."""
+    """Return whether this host's configured server registry contains the token."""
     active_env = env_file or _DEFAULT_SERVER_ENV_FILE
     if not active_env.is_file():
         return False
     try:
         values = read_environment_file(active_env)
-    except (OSError, ValueError):
-        return False
+    except (OSError, ValueError) as exc:
+        raise LocalTokenValidationError("local server configuration is unreadable") from exc
     registry = Path(
         values.get("GWAY_REGISTRY_DB", "/var/lib/gway-wireguard/registry.sqlite3")
     )
     if not registry.is_file():
-        return False
+        raise LocalTokenValidationError("configured local server registry is unavailable")
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     try:
         with sqlite3.connect(registry) as connection:
@@ -69,8 +73,8 @@ def _token_was_issued_locally(
                 "SELECT 1 FROM enrollment_tokens WHERE token_hash = ? LIMIT 1",
                 (digest,),
             ).fetchone()
-    except (OSError, sqlite3.Error):
-        return False
+    except (OSError, sqlite3.Error) as exc:
+        raise LocalTokenValidationError("configured local server registry cannot be read") from exc
     return row is not None
 
 
@@ -87,16 +91,26 @@ def enroll(
     is rejected so a server cannot consume a token it created locally.
     """
     supplied_token = _enrollment_token_value(token, token_file)
-    if supplied_token and _token_was_issued_locally(supplied_token):
-        return {
-            "success": False,
-            "exit_code": 2,
-            "output": "",
-            "error": (
-                "refusing enrollment with a token created on this device; "
-                "create the token on the server and run enroll on the client"
-            ),
-        }
+    if supplied_token:
+        try:
+            issued_locally = _token_was_issued_locally(supplied_token)
+        except LocalTokenValidationError as exc:
+            return {
+                "success": False,
+                "exit_code": 2,
+                "output": "",
+                "error": f"cannot validate enrollment token against local server state: {exc}",
+            }
+        if issued_locally:
+            return {
+                "success": False,
+                "exit_code": 2,
+                "output": "",
+                "error": (
+                    "refusing enrollment with a token created on this device; "
+                    "create the token on the server and run enroll on the client"
+                ),
+            }
 
     command = ["bash", str(_client_installer())]
     if device:
@@ -123,67 +137,37 @@ def enroll(
 
 def sync(
     state_dir: Path = _DEFAULT_STATE_DIR,
-    interface: str = "gway",
 ) -> dict[str, object]:
-    """Reconcile a persisted client configuration with the live WireGuard state."""
-    env = os.environ.copy()
-    env["STATE_DIR"] = str(state_dir)
-    env["WG_INTERFACE"] = interface
-    result = subprocess.run(
-        ["bash", str(_client_installer())],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    return {
-        "success": result.returncode == 0,
-        "exit_code": result.returncode,
-        "output": result.stdout.strip(),
-        "error": result.stderr.strip(),
-        "interface": interface,
-        "state_dir": str(state_dir),
-    }
+    """Reconcile the configured client relationship from persisted state."""
+    return status(state_dir=state_dir, debug=True)
 
 
 def status(
-    state_dir: Path = _DEFAULT_STATE_DIR,
     interface: str = "gway",
+    state_dir: Path = _DEFAULT_STATE_DIR,
     debug: bool = False,
-    wg_bin: str = "wg",
 ) -> dict[str, object]:
-    """Return persisted client configuration; optionally include live debug detail."""
+    """Return cheap persisted client status, with optional live diagnostics."""
     configured = (state_dir / "client-address").is_file() or (
         state_dir / "server-endpoint"
     ).is_file()
     result: dict[str, object] = {
         "configured": configured,
-        "device": _read_state(state_dir, "device-id"),
-        "domain": _read_state(state_dir, "domain"),
-        "hostname": _read_state(state_dir, "hostname"),
-        "vpn_address": _read_state(state_dir, "client-address"),
-        "server_endpoint": _read_state(state_dir, "server-endpoint"),
-        "server_tunnel_ip": _read_state(state_dir, "server-tunnel-ip"),
         "interface": interface,
-        "state_dir": str(state_dir),
+        "address": _read_state(state_dir, "client-address"),
+        "endpoint": _read_state(state_dir, "server-endpoint"),
+        "domain": _read_state(state_dir, "server-domain"),
     }
     if not debug:
         return result
 
-    try:
-        live = subprocess.run(
-            [wg_bin, "show", interface],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except OSError as exc:
-        result["debug"] = {"available": False, "detail": str(exc)}
-        return result
-
-    result["debug"] = {
-        "available": live.returncode == 0,
-        "output": live.stdout.strip() if live.returncode == 0 else "",
-        "detail": live.stderr.strip() if live.returncode != 0 else "",
-    }
+    live = subprocess.run(
+        ["wg", "show", interface],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    result["available"] = live.returncode == 0
+    result["wireguard"] = live.stdout.strip() if live.returncode == 0 else ""
+    result["error"] = live.stderr.strip() if live.returncode != 0 else ""
     return result
