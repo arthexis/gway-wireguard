@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from gway_wireguard.config import server_environment
+from gway_wire.config import server_environment
 
 from .godaddy import GoDaddyProvider
 from .provider import DNSConfigurationError, DNSProvider, DNSRecord
