@@ -168,7 +168,6 @@ def sync(
         "error": result.stderr.strip(),
         "interface": interface,
         "state_dir": str(state_dir),
-        "protocol": protocol,
     }
 
 
@@ -180,7 +179,7 @@ def status(
     protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
     """Return persisted client configuration; optionally include live debug detail."""
-    protocol = require_protocol(protocol)
+    require_protocol(protocol)
     configured = (state_dir / "client-address").is_file() or (
         state_dir / "server-endpoint"
     ).is_file()
@@ -194,7 +193,6 @@ def status(
         "server_tunnel_ip": _read_state(state_dir, "server-tunnel-ip"),
         "interface": interface,
         "state_dir": str(state_dir),
-        "protocol": protocol,
     }
     if not debug:
         return result
