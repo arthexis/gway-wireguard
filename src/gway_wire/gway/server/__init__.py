@@ -13,6 +13,7 @@ from gway_wire.admin_ops import (
     revoke_device,
 )
 from gway_wire.config import read_environment_file
+from gway_wire.gway.protocols import DEFAULT_PROTOCOL, require_protocol
 from gway_wire.peer_manager import PeerManager
 
 _DEFAULT_ENV_FILE = Path("/etc/gway-wireguard/server.env")
@@ -180,8 +181,10 @@ def deploy(
     domain: str | None = None,
     require_dns: bool = True,
     env_file: Path = _DEFAULT_ENV_FILE,
+    protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
     """Deploy the current checkout, then optionally validate a production domain."""
+    require_protocol(protocol)
     result = _run_installer()
     if not result["success"] or domain is None:
         return result
@@ -192,8 +195,10 @@ def deploy(
 def status(
     env_file: Path = _DEFAULT_ENV_FILE,
     debug: bool = False,
+    protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
     """Return the configured server snapshot; optionally include debug detail."""
+    require_protocol(protocol)
     return _snapshot(env_file=env_file, debug=debug)
 
 
@@ -203,8 +208,10 @@ def check(
     dns: bool = False,
     peers: bool = False,
     env_file: Path = _DEFAULT_ENV_FILE,
+    protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
     """Run selected server checks, or all checks when none are selected."""
+    require_protocol(protocol)
     selected = {"source": source, "config": config, "dns": dns, "peers": peers}
     if not any(selected.values()):
         selected = {name: True for name in selected}
@@ -234,20 +241,27 @@ def check(
     return results
 
 
-def token(device: str | None = None, ttl: int = 3600) -> dict[str, object]:
+def token(
+    device: str | None = None,
+    ttl: int = 3600,
+    protocol: str = DEFAULT_PROTOCOL,
+) -> dict[str, object]:
     """Create a one-time token on the server; then run `gway wire client enroll` on the client.
 
     The token is intended to cross the server/client boundary. Do not run the
     client enrollment command on this same device with a token created here.
     """
+    require_protocol(protocol)
     return create_enrollment_token(device=device, ttl=ttl)
 
 
-def devices() -> list[dict[str, object]]:
+def devices(protocol: str = DEFAULT_PROTOCOL) -> list[dict[str, object]]:
     """List enrolled devices from the server registry."""
+    require_protocol(protocol)
     return list_devices()
 
 
-def revoke(device: str) -> dict[str, object]:
-    """Revoke one enrolled device and remove its managed WireGuard access."""
+def revoke(device: str, protocol: str = DEFAULT_PROTOCOL) -> dict[str, object]:
+    """Revoke one enrolled device and remove its managed protocol access."""
+    require_protocol(protocol)
     return revoke_device(device)

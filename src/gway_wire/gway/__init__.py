@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import topology
+from .protocols import DEFAULT_PROTOCOL, require_protocol
 
 
 def status(
@@ -16,17 +17,27 @@ def status(
     client: bool = False,
     debug: bool = False,
     root: Path = topology._STATE_ROOT,
+    protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, dict[str, dict[str, object]]]:
     """Return topology-wide configured status, optionally filtered by role."""
-    return topology.status(server=server, client=client, debug=debug, root=root)
+    require_protocol(protocol)
+    return topology.status(
+        server=server,
+        client=client,
+        debug=debug,
+        root=root,
+        protocol=protocol,
+    )
 
 
 def sync(
     domain: str | None = None,
     root: Path = topology._STATE_ROOT,
+    protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, dict[str, dict[str, object]]]:
     """Reconcile all configured relationships, optionally for one domain."""
-    return topology.sync(domain=domain, root=root)
+    require_protocol(protocol)
+    return topology.sync(domain=domain, root=root, protocol=protocol)
 
 
 __all__ = ["status", "sync"]

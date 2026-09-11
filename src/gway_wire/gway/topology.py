@@ -10,6 +10,7 @@ from gway_wire.admin_ops import sync_dns, sync_hosts
 from gway_wire.config import read_environment_file
 from gway_wire.gway import client as client_commands
 from gway_wire.gway import server as server_commands
+from gway_wire.gway.protocols import DEFAULT_PROTOCOL, require_protocol
 
 _STATE_ROOT = Path("/etc/gway-wireguard")
 
@@ -86,15 +87,21 @@ def status(
     client: bool = False,
     debug: bool = False,
     root: Path = _STATE_ROOT,
+    protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, dict[str, dict[str, object]]]:
     """Return configured topology snapshots, optionally including debug detail."""
+    protocol = require_protocol(protocol)
     include_servers = server or not (server or client)
     include_clients = client or not (server or client)
     result: dict[str, dict[str, dict[str, object]]] = {}
 
     if include_servers:
         result["servers"] = {
-            domain: server_commands.status(env_file=env_file, debug=debug)
+            domain: server_commands.status(
+                env_file=env_file,
+                debug=debug,
+                protocol=protocol,
+            )
             for domain, env_file in discover_servers(root).items()
         }
 
@@ -104,6 +111,7 @@ def status(
                 state_dir=state_dir,
                 interface=_client_interface(state_dir),
                 debug=debug,
+                protocol=protocol,
             )
             for domain, state_dir in discover_clients(root).items()
         }
@@ -114,8 +122,10 @@ def status(
 def sync(
     domain: str | None = None,
     root: Path = _STATE_ROOT,
+    protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, dict[str, dict[str, object]]]:
     """Reconcile every configured role, optionally restricted to one domain."""
+    protocol = require_protocol(protocol)
     wanted = domain.strip().lower() if domain else None
     result: dict[str, dict[str, dict[str, object]]] = {"servers": {}, "clients": {}}
 
@@ -134,6 +144,7 @@ def sync(
         result["clients"][name] = client_commands.sync(
             state_dir=state_dir,
             interface=_client_interface(state_dir),
+            protocol=protocol,
         )
 
     return result

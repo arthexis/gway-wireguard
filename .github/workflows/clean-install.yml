@@ -1,0 +1,50 @@
+name: Clean Install
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  clean-install:
+    name: Clean Install
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: pip
+
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+
+      - name: Install wheel in clean environment
+        run: |
+          python -m venv "${RUNNER_TEMP}/gway-wire-clean"
+          "${RUNNER_TEMP}/gway-wire-clean/bin/python" -m pip install --upgrade pip
+          "${RUNNER_TEMP}/gway-wire-clean/bin/python" -m pip install dist/*.whl
+          "${RUNNER_TEMP}/gway-wire-clean/bin/python" -m pip check
+
+      - name: Smoke test installed namespaces
+        run: |
+          "${RUNNER_TEMP}/gway-wire-clean/bin/python" - <<'PY'
+          import gway_wire
+          import gway_wireguard
+          import gway_wire.gway
+
+          print(gway_wire.__name__)
+          print(gway_wireguard.__name__)
+          print(gway_wire.gway.__name__)
+          PY
