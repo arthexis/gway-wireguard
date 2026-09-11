@@ -37,7 +37,7 @@ def _run_installer(*arguments: str) -> dict[str, object]:
 
 
 def _readiness(
-    domain: str | None = None,
+    domain: str,
     require_dns: bool = True,
     env_file: Path = _DEFAULT_ENV_FILE,
 ) -> dict[str, object]:
@@ -60,7 +60,7 @@ def _readiness(
 
     if not configured_domain:
         issues.append("GWAY_BASE_DOMAIN is not configured")
-    if domain is not None and configured_domain != domain.strip().lower():
+    if configured_domain != domain.strip().lower():
         issues.append(
             "base domain mismatch: "
             f"configured={configured_domain or '<unset>'} expected={domain}"
@@ -113,9 +113,9 @@ def deploy(
     require_dns: bool = True,
     env_file: Path = _DEFAULT_ENV_FILE,
 ) -> dict[str, object]:
-    """Deploy the current checkout, then validate the deployed configuration."""
+    """Deploy the current checkout and optionally validate its production domain."""
     result = _run_installer()
-    if not result["success"]:
+    if not result["success"] or domain is None:
         return result
     readiness = _readiness(domain=domain, require_dns=require_dns, env_file=env_file)
     return {**result, **readiness, "success": bool(readiness["ready"])}
