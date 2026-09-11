@@ -78,13 +78,13 @@ jobs:
           gway wire client sync --help
           gway wire client enroll --help
           gway wire server token --help
-          gway wire server device revoke --help
+          gway wire server devices --help
+          gway wire server revoke --help
           gway wire server hosts sync --help
           gway wire server dns status --json
           gway wire server dns sync --help
           gway wire server dns ensure --help
           gway wire server dns delete --help
-          gway wire server peer managed --help
           gway wire server deploy --help
           gway wire server status --help
           gway wire server check --help
@@ -97,10 +97,10 @@ jobs:
           export GWAY_DATA_HOME="${RUNNER_TEMP}/gway-data"
           export GWAY_CONFIG_HOME="${RUNNER_TEMP}/gway-config"
 
-          lazy="$(gway wire client status --interface '[project.name]' --wg-bin /bin/false --json)"
-          command="$(gway wire client status --interface '[command.name]' --wg-bin /bin/false --json)"
-          eager="$(gway wire client status --interface '%[cwd]' --wg-bin /bin/false --json)"
-          mixed="$(gway wg client status --interface '%[cwd]/[project.name]/[command.name]' --wg-bin /bin/false --json)"
+          lazy="$(gway wire client status --interface '[project.name]' --json)"
+          command="$(gway wire client status --interface '[command.name]' --json)"
+          eager="$(gway wire client status --interface '%[cwd]' --json)"
+          mixed="$(gway wg client status --interface '%[cwd]/[project.name]/[command.name]' --json)"
 
           python3 - "$lazy" "$command" "$eager" "$mixed" <<'PY'
           import json
@@ -116,7 +116,7 @@ jobs:
           assert mixed["interface"] == f"{cwd}/wire/status"
 
           for result in (lazy, command, eager, mixed):
-              assert result["available"] is False
+              assert result["configured"] is False
           PY
 
       - name: Test client validation
