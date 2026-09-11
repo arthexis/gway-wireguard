@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 from gway_wire.config import read_environment_file
+from gway_wire.gway.protocols import DEFAULT_PROTOCOL, require_protocol
 
 _DEFAULT_ENROLL_URL = "https://register.arthexis.com/v1/enroll"
 _DEFAULT_STATE_DIR = Path("/etc/gway-wireguard")
@@ -89,6 +90,7 @@ def enroll(
     token_file: Path | None = None,
     token: str | None = None,
     enroll_url: str = _DEFAULT_ENROLL_URL,
+    protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
     """Enroll this client using a token created first with `gway wire server token` on the server.
 
@@ -96,6 +98,7 @@ def enroll(
     separate client device. A token found in this device's own server registry
     is rejected so a server cannot consume a token it created locally.
     """
+    require_protocol(protocol)
     supplied_token = _enrollment_token_value(token, token_file)
     if supplied_token:
         try:
@@ -144,8 +147,10 @@ def enroll(
 def sync(
     state_dir: Path = _DEFAULT_STATE_DIR,
     interface: str = "gway",
+    protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
-    """Reconcile a persisted client configuration with the live WireGuard state."""
+    """Reconcile a persisted client configuration with the live protocol state."""
+    require_protocol(protocol)
     env = os.environ.copy()
     env["STATE_DIR"] = str(state_dir)
     env["WG_INTERFACE"] = interface
@@ -163,6 +168,7 @@ def sync(
         "error": result.stderr.strip(),
         "interface": interface,
         "state_dir": str(state_dir),
+        "protocol": protocol,
     }
 
 
@@ -171,8 +177,10 @@ def status(
     interface: str = "gway",
     debug: bool = False,
     wg_bin: str = "wg",
+    protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
     """Return persisted client configuration; optionally include live debug detail."""
+    protocol = require_protocol(protocol)
     configured = (state_dir / "client-address").is_file() or (
         state_dir / "server-endpoint"
     ).is_file()
@@ -186,6 +194,7 @@ def status(
         "server_tunnel_ip": _read_state(state_dir, "server-tunnel-ip"),
         "interface": interface,
         "state_dir": str(state_dir),
+        "protocol": protocol,
     }
     if not debug:
         return result
