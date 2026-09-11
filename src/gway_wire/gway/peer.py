@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gway_wireguard.peer_manager import PeerManager
+from gway_wire.peer_manager import PeerManager
 
 
 def managed(
