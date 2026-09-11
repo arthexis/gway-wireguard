@@ -80,16 +80,64 @@ class SimplifiedCommandTests(unittest.TestCase):
         self.assertEqual(result["token"], "value")
         create.assert_called_once_with(device="gway-004", ttl=120)
 
+    def test_server_devices_and_revoke_are_flat_commands(self) -> None:
+        with patch("gway_wire.gway.server.list_devices", return_value=[{"device_id": "gway-004"}]) as listed:
+            self.assertEqual(server.devices()[0]["device_id"], "gway-004")
+            listed.assert_called_once_with()
+        with patch("gway_wire.gway.server.revoke_device", return_value={"revoked": True}) as revoke:
+            self.assertTrue(server.revoke("gway-004")["revoked"])
+            revoke.assert_called_once_with("gway-004")
+
+    def test_server_status_is_static_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root_dir = Path(directory)
+            registry = root_dir / "registry.sqlite3"
+            registry.write_bytes(b"sqlite")
+            wg_config = root_dir / "gway.conf"
+            wg_config.write_text("[Interface]\n", encoding="utf-8")
+            env = root_dir / "server.env"
+            env.write_text(
+                "\n".join(
+                    [
+                        "GWAY_BASE_DOMAIN=arthexis.com",
+                        f"GWAY_REGISTRY_DB={registry}",
+                        f"GWAY_WG_CONFIG={wg_config}",
+                        "GWAY_WG_INTERFACE=gway",
+                        "GWAY_DNS_PROVIDER=none",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            result = server.status(env_file=env)
+
+        self.assertTrue(result["configured"])
+        self.assertEqual(result["domain"], "arthexis.com")
+        self.assertTrue(result["registry_exists"])
+        self.assertNotIn("managed_peers", result)
+
+    @patch("gway_wire.gway.server._run_installer", return_value={"success": True})
+    def test_server_check_defaults_to_all_checks(self, run_installer) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / "server.env"
+            env.write_text("GWAY_BASE_DOMAIN=arthexis.com\nGWAY_DNS_PROVIDER=none\n", encoding="utf-8")
+            with patch("gway_wire.gway.server.dns_status", return_value={"valid": True}):
+                result = server.check(env_file=env)
+
+        self.assertEqual(set(result), {"source", "config", "dns", "peers"})
+        run_installer.assert_called_once_with("--check")
+
     @patch("gway_wire.gway.client.subprocess.run")
-    def test_client_status_is_role_scoped(self, run) -> None:
-        run.return_value = subprocess.CompletedProcess(
-            ["wg", "show", "gway"], 0, stdout="interface: gway\n", stderr=""
-        )
+    def test_client_status_is_static_unless_debug_requested(self, run) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            (state / "client-address").write_text("10.90.0.2/32\n", encoding="utf-8")
+            (state / "server-endpoint").write_text("vpn.example.com:51820\n", encoding="utf-8")
+            result = client.status(state_dir=state)
 
-        result = client.status()
-
-        self.assertTrue(result["available"])
-        self.assertEqual(result["interface"], "gway")
+        self.assertTrue(result["configured"])
+        self.assertEqual(result["vpn_address"], "10.90.0.2/32")
+        run.assert_not_called()
 
     def test_topology_status_maps_multiple_domains_and_filters_roles(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -102,8 +150,6 @@ class SimplifiedCommandTests(unittest.TestCase):
                         "GWAY_BASE_DOMAIN=arthexis.com",
                         f"GWAY_REGISTRY_DB={registry}",
                         "GWAY_DNS_PROVIDER=none",
-                        "GWAY_VPN_HOSTNAME=vpn.arthexis.com",
-                        "GWAY_REGISTER_HOSTNAME=register.arthexis.com",
                     ]
                 )
                 + "\n",
@@ -113,15 +159,11 @@ class SimplifiedCommandTests(unittest.TestCase):
             client_dir.mkdir(parents=True)
             (client_dir / "domain").write_text("example.com\n", encoding="utf-8")
             (client_dir / "interface").write_text("gway-example\n", encoding="utf-8")
+            (client_dir / "client-address").write_text("10.90.1.2/32\n", encoding="utf-8")
 
-            with patch.object(
-                topology.client_commands,
-                "status",
-                return_value={"available": True, "interface": "gway-example"},
-            ):
-                combined = root.status(root=root_dir)
-                servers_only = root.status(server=True, root=root_dir)
-                clients_only = root.status(client=True, root=root_dir)
+            combined = root.status(root=root_dir)
+            servers_only = root.status(server=True, root=root_dir)
+            clients_only = root.status(client=True, root=root_dir)
 
         self.assertIn("arthexis.com", combined["servers"])
         self.assertIn("example.com", combined["clients"])
