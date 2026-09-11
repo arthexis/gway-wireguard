@@ -1,1 +1,1 @@
-"""gway-wireguard package."""
+"""gway-wire package."""
