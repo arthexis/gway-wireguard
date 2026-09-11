@@ -62,6 +62,27 @@ class ShorthandCommandTests(unittest.TestCase):
 
         self.assertFalse(preflight.call_args.args[2])
 
+    @patch("gway_wire.gway.server._dns_status_for", return_value={"valid": True})
+    def test_dns_provider_and_provider_select_same_check(self, dns_status) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / "server.env"
+            env.write_text("GWAY_BASE_DOMAIN=gelectriic.com\n", encoding="utf-8")
+
+            explicit = server.check(
+                "gelectriic.com",
+                dns_provider=True,
+                env_file=env,
+            )
+            alias = server.check(
+                "gelectriic.com",
+                provider=True,
+                env_file=env,
+            )
+
+        self.assertEqual(explicit["dns"], {"valid": True})
+        self.assertEqual(alias["dns"], {"valid": True})
+        self.assertEqual(dns_status.call_count, 2)
+
     def test_root_check_delegates_without_server_prefix(self) -> None:
         with (
             tempfile.TemporaryDirectory() as directory,
@@ -74,6 +95,7 @@ class ShorthandCommandTests(unittest.TestCase):
             result = root.check(
                 "gelectriic.com",
                 dns=False,
+                provider=True,
                 root=Path(directory),
             )
 
@@ -81,6 +103,7 @@ class ShorthandCommandTests(unittest.TestCase):
         checked.assert_called_once()
         self.assertEqual(checked.call_args.args[0], "gelectriic.com")
         self.assertFalse(checked.call_args.kwargs["dns"])
+        self.assertTrue(checked.call_args.kwargs["provider"])
 
 
 if __name__ == "__main__":
