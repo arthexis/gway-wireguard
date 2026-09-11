@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import sqlite3
 import subprocess
 from pathlib import Path
 
+from gway_wire.config import read_environment_file
+
 _DEFAULT_ENROLL_URL = "https://register.arthexis.com/v1/enroll"
 _DEFAULT_STATE_DIR = Path("/etc/gway-wireguard")
+_DEFAULT_SERVER_ENV_FILE = Path("/etc/gway-wireguard/server.env")
+
+
+class LocalTokenValidationError(RuntimeError):
+    """Raised when configured local server state cannot validate a token."""
 
 
 def _client_installer() -> Path:
@@ -28,13 +37,87 @@ def _read_state(state_dir: Path, name: str) -> str | None:
     return value or None
 
 
+def _enrollment_token_value(token: str | None, token_file: Path | None) -> str | None:
+    """Return the supplied enrollment token without persisting or logging it."""
+    if token is not None:
+        return token.strip()
+    if token_file is not None:
+        try:
+            return token_file.read_text(encoding="utf-8").strip() or None
+        except OSError:
+            return None
+    return os.environ.get("GWAY_ENROLL_TOKEN", "").strip() or None
+
+
+def _token_was_issued_locally(
+    token: str,
+    env_file: Path | None = None,
+) -> bool:
+    """Return whether this host's configured server registry contains the token."""
+    active_env = env_file or _DEFAULT_SERVER_ENV_FILE
+    if not active_env.is_file():
+        return False
+    try:
+        values = read_environment_file(active_env)
+    except (OSError, ValueError) as exc:
+        raise LocalTokenValidationError(
+            "local server configuration is unreadable"
+        ) from exc
+    registry = Path(
+        values.get("GWAY_REGISTRY_DB", "/var/lib/gway-wireguard/registry.sqlite3")
+    )
+    if not registry.is_file():
+        raise LocalTokenValidationError(
+            "configured local server registry is unavailable"
+        )
+    digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    try:
+        with sqlite3.connect(registry) as connection:
+            row = connection.execute(
+                "SELECT 1 FROM enrollment_tokens WHERE token_hash = ? LIMIT 1",
+                (digest,),
+            ).fetchone()
+    except (OSError, sqlite3.Error) as exc:
+        raise LocalTokenValidationError(
+            "configured local server registry cannot be read"
+        ) from exc
+    return row is not None
+
+
 def enroll(
     device: str | None = None,
     token_file: Path | None = None,
     token: str | None = None,
     enroll_url: str = _DEFAULT_ENROLL_URL,
 ) -> dict[str, object]:
-    """Enroll this device with the WireGuard gateway without changing directories."""
+    """Enroll this client using a token created first with `gway wire server token` on the server.
+
+    Run the token command on the server device, then run this command on the
+    separate client device. A token found in this device's own server registry
+    is rejected so a server cannot consume a token it created locally.
+    """
+    supplied_token = _enrollment_token_value(token, token_file)
+    if supplied_token:
+        try:
+            issued_locally = _token_was_issued_locally(supplied_token)
+        except LocalTokenValidationError as exc:
+            return {
+                "success": False,
+                "exit_code": 2,
+                "output": "",
+                "error": f"cannot validate enrollment token against local server state: {exc}",
+            }
+        if issued_locally:
+            return {
+                "success": False,
+                "exit_code": 2,
+                "output": "",
+                "error": (
+                    "refusing enrollment with a token created on this device; "
+                    "create the token on the server and run enroll on the client"
+                ),
+            }
+
     command = ["bash", str(_client_installer())]
     if device:
         command.extend(["--device", device])

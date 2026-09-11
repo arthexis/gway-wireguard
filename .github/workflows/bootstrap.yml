@@ -8,16 +8,8 @@ on:
 permissions:
   contents: read
 
+# Repository-local integration workflow; shared CI definitions are copied in, not invoked.
 jobs:
-  baseline:
-    name: ci-base baseline
-    uses: arthexis/ci-base/.github/workflows/consumer-ci.yml@v1
-    with:
-      install-command: python -m pip install -e .
-      test-command: python -m unittest discover -s tests/gway -p 'test_*.py' -v
-      lint-paths: src tests/gway
-      install-smoke-command: python -c "import gway_wire; import gway_wireguard"
-
   validate:
     name: WireGuard integration
     runs-on: ubuntu-latest

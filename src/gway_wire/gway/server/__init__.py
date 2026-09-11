@@ -235,7 +235,11 @@ def check(
 
 
 def token(device: str | None = None, ttl: int = 3600) -> dict[str, object]:
-    """Create a one-time enrollment token, optionally scoped to one device."""
+    """Create a one-time token on the server; then run `gway wire client enroll` on the client.
+
+    The token is intended to cross the server/client boundary. Do not run the
+    client enrollment command on this same device with a token created here.
+    """
     return create_enrollment_token(device=device, ttl=ttl)
 
 

@@ -10,6 +10,7 @@ import gway_wire.gway as root
 from gway_wire.admin_ops import AdminSettings
 from gway_wire.gway import client, server
 from gway_wire.gway import topology
+from gway_wire.registry import Registry
 
 
 class SimplifiedCommandTests(unittest.TestCase):
@@ -82,6 +83,46 @@ class SimplifiedCommandTests(unittest.TestCase):
 
         self.assertEqual(result["token"], "value")
         create.assert_called_once_with(device="gway-004", ttl=120)
+
+    @patch("gway_wire.gway.client.subprocess.run")
+    def test_client_enroll_rejects_token_issued_on_same_device(self, run) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root_dir = Path(directory)
+            registry_path = root_dir / "registry.sqlite3"
+            registry = Registry(registry_path)
+            token, _ = registry.create_token(
+                device_id="gway-004",
+                token="same-device-token-1234567890",
+            )
+            env = root_dir / "server.env"
+            env.write_text(
+                f"GWAY_REGISTRY_DB={registry_path}\n",
+                encoding="utf-8",
+            )
+            with patch.object(client, "_DEFAULT_SERVER_ENV_FILE", env):
+                result = client.enroll(device="gway-004", token=token)
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["exit_code"], 2)
+        self.assertIn("created on this device", result["error"])
+        run.assert_not_called()
+
+    @patch("gway_wire.gway.client.subprocess.run")
+    def test_client_enroll_fails_closed_when_local_registry_is_missing(self, run) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root_dir = Path(directory)
+            env = root_dir / "server.env"
+            env.write_text(
+                f"GWAY_REGISTRY_DB={root_dir / 'missing.sqlite3'}\n",
+                encoding="utf-8",
+            )
+            with patch.object(client, "_DEFAULT_SERVER_ENV_FILE", env):
+                result = client.enroll(device="gway-004", token="remote-token")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["exit_code"], 2)
+        self.assertIn("cannot validate enrollment token", result["error"])
+        run.assert_not_called()
 
     def test_server_devices_and_revoke_are_flat_commands(self) -> None:
         with patch(
