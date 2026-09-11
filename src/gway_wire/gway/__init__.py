@@ -5,6 +5,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from gway_wire.admin_ops import create_enrollment_token
+
 _DEFAULT_ENROLL_URL = "https://register.arthexis.com/v1/enroll"
 
 
@@ -47,6 +49,11 @@ def enroll(
     }
 
 
+def token(device: str | None = None, ttl: int = 3600) -> dict[str, object]:
+    """Create a one-time enrollment token, optionally scoped to one device."""
+    return create_enrollment_token(device=device, ttl=ttl)
+
+
 def status(interface: str = "gway", wg_bin: str = "wg") -> dict[str, object]:
     """Show live WireGuard status without exposing private key material."""
     try:
@@ -64,9 +71,7 @@ def status(interface: str = "gway", wg_bin: str = "wg") -> dict[str, object]:
         }
 
     if result.returncode != 0:
-        detail = (
-            result.stderr.strip() or f"{wg_bin} exited with status {result.returncode}"
-        )
+        detail = result.stderr.strip() or f"{wg_bin} exited with status {result.returncode}"
         return {
             "interface": interface,
             "available": False,
