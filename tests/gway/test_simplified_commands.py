@@ -70,10 +70,13 @@ class SimplifiedCommandTests(unittest.TestCase):
         self.assertEqual(result["domain"], "arthexis.com")
 
     def test_server_token_is_direct_server_command(self) -> None:
-        with patch.object(AdminSettings, "from_env") as settings, patch(
-            "gway_wire.gway.server.create_enrollment_token",
-            return_value={"token": "value", "device": "gway-004"},
-        ) as create:
+        with (
+            patch.object(AdminSettings, "from_env") as settings,
+            patch(
+                "gway_wire.gway.server.create_enrollment_token",
+                return_value={"token": "value", "device": "gway-004"},
+            ) as create,
+        ):
             settings.return_value = object()
             result = server.token(device="gway-004", ttl=120)
 
