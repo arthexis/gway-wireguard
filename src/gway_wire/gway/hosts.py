@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gway_wireguard.admin_ops import sync_hosts
+from gway_wire.admin_ops import sync_hosts
 
 
 def sync() -> dict[str, object]:
