@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
 _DEFAULT_ENROLL_URL = "https://register.arthexis.com/v1/enroll"
+_DEFAULT_STATE_DIR = Path("/etc/gway-wireguard")
 
 
 def _client_installer() -> Path:
@@ -44,6 +46,31 @@ def enroll(
         "exit_code": result.returncode,
         "output": result.stdout.strip(),
         "error": result.stderr.strip(),
+    }
+
+
+def sync(
+    state_dir: Path = _DEFAULT_STATE_DIR,
+    interface: str = "gway",
+) -> dict[str, object]:
+    """Reconcile a persisted client configuration with the live WireGuard state."""
+    env = os.environ.copy()
+    env["STATE_DIR"] = str(state_dir)
+    env["WG_INTERFACE"] = interface
+    result = subprocess.run(
+        ["bash", str(_client_installer())],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    return {
+        "success": result.returncode == 0,
+        "exit_code": result.returncode,
+        "output": result.stdout.strip(),
+        "error": result.stderr.strip(),
+        "interface": interface,
+        "state_dir": str(state_dir),
     }
 
 
