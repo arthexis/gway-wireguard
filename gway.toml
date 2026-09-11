@@ -1,7 +1,7 @@
 [project]
-name = "wireguard"
-aliases = ["wg"]
+name = "wire"
+aliases = ["wireguard", "wg"]
 
 [adapter]
 type = "python"
-module = "gway_wireguard.gway"
+module = "gway_wire.gway"

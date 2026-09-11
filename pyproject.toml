@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gway-wireguard"
+name = "gway-wire"
 version = "0.3.1"
-description = "Secure WireGuard enrollment and routing for Gway devices"
+description = "Endpoint connectivity for Gway devices, with WireGuard as the first backend"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
