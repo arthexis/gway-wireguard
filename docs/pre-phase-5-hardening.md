@@ -21,29 +21,29 @@ sudo gway wire server status
 `server deploy` delegates to the existing idempotent server installer, which
 copies the current managed checkout into `/opt/gway-wireguard/server`, validates
 configuration, reconciles registry/DNS state, and restarts the managed service
-when appropriate.
+when appropriate. Supplying `--domain` also applies the production-readiness
+gate to that deployed domain.
 
-When `--domain` is supplied, deployment also applies the production readiness
-gate for that domain. Without `--domain`, deployment remains usable for
-DNS-disabled or development configurations.
+The separation is deliberate: `gway upgrade wire` updates the managed source
+checkout and its GWAY environment, while `server deploy` changes the running
+gateway.
 
-## Production readiness gate
+## Topology status and reconciliation
 
-For the production gateway, use deployment with the intended domain:
+Top-level `status` and `sync` operate across every configured relationship on
+the host. This allows a host to participate as a client, server, or both for
+multiple domains without changing the command surface:
 
 ```bash
-sudo gway wire server deploy --domain arthexis.com
+gway wire status
+gway wire status --server
+gway wire status --client
+sudo gway wire sync
+sudo gway wire sync --domain arthexis.com
 ```
 
-The readiness check reads the deployed `/etc/gway-wireguard/server.env` without
-sourcing it and does not print credential contents. It verifies:
-
-- the deployed environment exists and is readable;
-- the registry path exists;
-- the configured base domain matches the requested production domain;
-- DNS is enabled;
-- `vpn.<domain>` and `register.<domain>` match the configured base domain;
-- GoDaddy credential files exist and are non-empty when that provider is selected.
+`status` returns `servers` and `clients` maps keyed by domain. `sync` reconciles
+both roles when present; `--domain` restricts the operation to one domain.
 
 ## Enrollment diagnostics
 
@@ -58,24 +58,23 @@ sudo journalctl -u gway-wireguard-enroll.service -n 100 --no-pager
 ```
 
 Failure events include an opaque request ID, validated device ID, failing stage,
-exception type, and redacted message. Enrollment tokens and configured GoDaddy
-API credentials are redacted from exception text before it is written to the
-journal. Request bodies and WireGuard private keys are never logged.
+exception type, and redacted message. Enrollment tokens, configured GoDaddy API
+credentials, request bodies, and WireGuard private keys are not logged.
 
 ## Live exit checklist before Phase 5
 
 Keep the legacy `gway-001` peer unmanaged during this validation.
 
-1. Upgrade the current gateway source with `sudo gway upgrade wire`.
-2. Deploy and require a clean production-domain result with `sudo gway wire server deploy --domain arthexis.com`.
-3. Verify `gway-001` remains present and reachable with `gway wire server peer managed` and WireGuard diagnostics.
-4. Create a fresh device-scoped token with `sudo gway wire server token --device gway-004`.
-5. On the disposable box, enroll with `sudo gway wire client enroll --device gway-004 --token '<token>'`.
+1. Upgrade and deploy the current gateway code with `server deploy --domain arthexis.com`.
+2. Run `gway wire status --server` and require a clean `arthexis.com` server result.
+3. Verify `gway-001` remains present and reachable.
+4. Create a fresh device-scoped token with `gway wire server token --device gway-004`.
+5. Enroll `gway-004` through `https://register.arthexis.com/v1/enroll` using `gway wire client enroll`.
 6. Confirm its registry-assigned VPN `/32`; do not infer the address from the device suffix.
-7. Verify `gway wire client status`, a recent WireGuard handshake, and bidirectional gateway reachability.
+7. Verify WireGuard handshake and bidirectional gateway reachability.
 8. Verify `getent hosts gway-004` and SSH from the gateway over WireGuard.
 9. Verify `gway-004.arthexis.com` points to the public gateway address.
 10. Verify replay of the successfully consumed token is rejected.
-11. Run `gway wire server dns ensure gway-004` and `gway wire server dns sync` repeatedly and verify idempotency.
-12. Exercise `gway wire server device revoke gway-004` on the disposable identity, or defer revocation if it is intended to remain the first managed production peer.
+11. Run `gway wire sync --domain arthexis.com` repeatedly and verify idempotency.
+12. Exercise revocation on a disposable/test identity, or defer revocation of `gway-004` if it is intended to remain the first managed production peer.
 13. Record the live findings in implementation tracking issue #2 before starting Phase 5 reverse-proxy work.
