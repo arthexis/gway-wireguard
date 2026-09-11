@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gway_wireguard.admin_ops import (
+from gway_wire.admin_ops import (
     delete_device_dns,
     dns_status,
     ensure_device_dns,
