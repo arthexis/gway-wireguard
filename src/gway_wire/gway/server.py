@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from gway_wireguard.config import read_environment_file
+from gway_wire.config import read_environment_file
 
 _DEFAULT_ENV_FILE = Path("/etc/gway-wireguard/server.env")
 _SUPPORTED_DNS_PROVIDERS = {"none", "disabled", "godaddy"}
