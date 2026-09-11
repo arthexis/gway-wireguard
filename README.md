@@ -6,20 +6,35 @@ The project is under active development and is **not yet ready for unattended pr
 
 ## GWAY integration
 
-The repository is a managed Python-adapter project for GWAY. `wire` is the canonical project name; the former `wireguard` name and its short `wg` form remain aliases for compatibility. Every operational command is explicitly scoped to either the client or server role:
+The repository is a managed Python-adapter project for GWAY. `wire` is the canonical project name; the former `wireguard` name and its short `wg` form remain aliases for compatibility. Role-specific operations are explicitly scoped to `client` or `server`, while top-level `status` and `sync` operate across the configured topology.
 
 ```bash
 gway install wire
-gway wire client status
-gway wire server peer managed
-gway wireguard client status
-gway wg client status --json
+gway wire status
+gway wire status --server
+gway wire status --client
+gway wire sync
+gway wire sync --domain arthexis.com
 ```
 
-Client-side commands operate on the local endpoint:
+`status` returns maps keyed by domain for both configured roles:
+
+```text
+{
+  "servers": {"arthexis.com": {...}},
+  "clients": {"example.com": {...}}
+}
+```
+
+With neither filter, both maps are returned. `--server` or `--client` restricts the result to that role; supplying both includes both. `sync` reconciles every configured relationship on the host, while `--domain` limits reconciliation to that domain regardless of whether this host is acting as a client, server, or both.
+
+The topology reader supports the existing single-instance state under `/etc/gway-wireguard` and domain-scoped state for multiple relationships under `/etc/gway-wireguard/servers/*.env` and `/etc/gway-wireguard/clients/<domain>/`.
+
+Client-side commands operate on one local endpoint relationship:
 
 ```bash
 gway wire client status
+gway wire client sync
 gway wire client enroll --device gway-004 --token '<one-time-token>'
 ```
 
@@ -56,7 +71,7 @@ gway wire client status --interface '%[cwd]/[project.name]'
 
 Project and command routing remain literal, so `wire client status` selects the command before its argument values are interpolated.
 
-The current implementation is the WireGuard backend. `client status` reports the live `gway` WireGuard interface without exposing private key material. Token, device, peer, private-hostname, and DNS operations live under `server` and delegate to the same packaged implementation used by the enrollment service and compatibility server scripts.
+The current implementation is the WireGuard backend. `client status` reports one live WireGuard interface without exposing private key material. Top-level `status` aggregates all discovered relationships. Token, device, peer, private-hostname, and DNS operations live under `server` and delegate to the same packaged implementation used by the enrollment service and compatibility server scripts.
 
 The canonical Python namespace is `gway_wire`. The previous `gway_wireguard` namespace remains packaged during the transition so existing imports do not break immediately.
 
