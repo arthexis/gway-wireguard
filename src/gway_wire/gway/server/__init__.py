@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
-from gway_wire.admin_ops import create_enrollment_token, dns_status, list_devices, revoke_device
+from gway_wire.admin_ops import (
+    create_enrollment_token,
+    dns_status,
+    list_devices,
+    revoke_device,
+)
 from gway_wire.config import read_environment_file
 from gway_wire.peer_manager import PeerManager
 
@@ -23,6 +29,7 @@ def _server_installer() -> Path:
 
 
 def _run_installer(*arguments: str) -> dict[str, object]:
+    """Run the server installer with the supplied mode arguments."""
     installer = _server_installer()
     result = subprocess.run(
         ["bash", str(installer), *arguments],
@@ -43,6 +50,7 @@ def _readiness(
     require_dns: bool = True,
     env_file: Path = _DEFAULT_ENV_FILE,
 ) -> dict[str, object]:
+    """Validate deployed configuration readiness without mutating server state."""
     issues: list[str] = []
     if not env_file.is_file():
         return {"ready": False, "issues": [f"missing deployed environment: {env_file}"]}
@@ -56,7 +64,9 @@ def _readiness(
 
     configured_domain = values.get("GWAY_BASE_DOMAIN", "").strip().lower()
     provider = values.get("GWAY_DNS_PROVIDER", "none").strip().lower() or "none"
-    registry = Path(values.get("GWAY_REGISTRY_DB", "/var/lib/gway-wireguard/registry.sqlite3"))
+    registry = Path(
+        values.get("GWAY_REGISTRY_DB", "/var/lib/gway-wireguard/registry.sqlite3")
+    )
     vpn_hostname = values.get("GWAY_VPN_HOSTNAME", "").strip().lower()
     register_hostname = values.get("GWAY_REGISTER_HOSTNAME", "").strip().lower()
 
@@ -94,7 +104,9 @@ def _readiness(
             if values.get(direct_name, "").strip():
                 continue
             configured_path = values.get(file_name, "").strip()
-            credential = Path(configured_path) if configured_path else env_file.parent / default_name
+            credential = (
+                Path(configured_path) if configured_path else env_file.parent / default_name
+            )
             try:
                 if not credential.is_file() or credential.stat().st_size == 0:
                     issues.append(f"credential file missing or empty: {credential}")
@@ -110,13 +122,18 @@ def _readiness(
     }
 
 
-def _snapshot(env_file: Path = _DEFAULT_ENV_FILE, debug: bool = False) -> dict[str, object]:
+def _snapshot(
+    env_file: Path = _DEFAULT_ENV_FILE,
+    debug: bool = False,
+) -> dict[str, object]:
     """Read configured server state without performing validation or mutation."""
     values = read_environment_file(env_file)
     if not values:
         return {"configured": False, "env_file": str(env_file)}
 
-    registry = Path(values.get("GWAY_REGISTRY_DB", "/var/lib/gway-wireguard/registry.sqlite3"))
+    registry = Path(
+        values.get("GWAY_REGISTRY_DB", "/var/lib/gway-wireguard/registry.sqlite3")
+    )
     wg_config = Path(values.get("GWAY_WG_CONFIG", "/etc/wireguard/gway.conf"))
     result: dict[str, object] = {
         "configured": True,
@@ -137,8 +154,24 @@ def _snapshot(env_file: Path = _DEFAULT_ENV_FILE, debug: bool = False) -> dict[s
         "env_file": str(env_file),
     }
     if debug and wg_config.is_file():
-        result["managed_peers"] = PeerManager(wg_config, apply_runtime=False).managed_peers()
+        result["managed_peers"] = PeerManager(
+            wg_config,
+            apply_runtime=False,
+        ).managed_peers()
     return result
+
+
+def _dns_status_for(env_file: Path) -> dict[str, object]:
+    """Read DNS status using the selected deployment environment file."""
+    previous = os.environ.get("GWAY_SERVER_ENV_FILE")
+    os.environ["GWAY_SERVER_ENV_FILE"] = str(env_file)
+    try:
+        return dns_status()
+    finally:
+        if previous is None:
+            os.environ.pop("GWAY_SERVER_ENV_FILE", None)
+        else:
+            os.environ["GWAY_SERVER_ENV_FILE"] = previous
 
 
 def deploy(
@@ -180,10 +213,12 @@ def check(
     if selected["config"]:
         results["config"] = _readiness(require_dns=False, env_file=env_file)
     if selected["dns"]:
-        results["dns"] = dns_status()
+        results["dns"] = _dns_status_for(env_file)
     if selected["peers"]:
         snapshot = _snapshot(env_file=env_file)
-        config_path = Path(str(snapshot.get("wireguard_config", "/etc/wireguard/gway.conf")))
+        config_path = Path(
+            str(snapshot.get("wireguard_config", "/etc/wireguard/gway.conf"))
+        )
         managed = (
             PeerManager(config_path, apply_runtime=False).managed_peers()
             if config_path.is_file()
