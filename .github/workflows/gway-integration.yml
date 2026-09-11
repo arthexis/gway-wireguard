@@ -41,14 +41,15 @@ jobs:
           gway info wire --json
           gway wire status --protocol wireguard --json
           gway wire check example.com --no-dns --protocol wireguard --json
+          gway wire check example.com --provider --no-dns --help
           gway wireguard status --protocol wireguard --json
           gway wg status --protocol wireguard --json
           gway wire client status --protocol wireguard --json
           gway wire client enroll --help
           gway wire server status --protocol wireguard --help
           gway wire server check example.com --no-dns --protocol wireguard --json
-          gway wire server check example.com --dns-check --no-dns --help
-          gway wire server validate example.com --no-dns --protocol wireguard --json
+          gway wire server check example.com --dns-provider --no-dns --help
+          gway wire server validate example.com --provider --no-dns --help
           gway wire server deploy example.com --no-dns --help
           gway wire server token --help
           gway wire server dns status --protocol wireguard --help
