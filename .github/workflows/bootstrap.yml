@@ -16,7 +16,7 @@ jobs:
       install-command: python -m pip install -e .
       test-command: python -m unittest discover -s tests/gway -p 'test_*.py' -v
       lint-paths: src tests/gway
-      install-smoke-command: python -c "import gway_wireguard"
+      install-smoke-command: python -c "import gway_wire; import gway_wireguard"
 
   validate:
     name: WireGuard integration
@@ -40,25 +40,8 @@ jobs:
             server/hosts_manager.py \
             server/peer_manager.py \
             server/enroll_api.py \
-            server/admin.py \
-            src/gway_wireguard/__init__.py \
-            src/gway_wireguard/config.py \
-            src/gway_wireguard/registry.py \
-            src/gway_wireguard/hosts_manager.py \
-            src/gway_wireguard/peer_manager.py \
-            src/gway_wireguard/admin_ops.py \
-            src/gway_wireguard/diagnostics.py \
-            src/gway_wireguard/dns/__init__.py \
-            src/gway_wireguard/dns/provider.py \
-            src/gway_wireguard/dns/godaddy.py \
-            src/gway_wireguard/dns/service.py \
-            src/gway_wireguard/gway/__init__.py \
-            src/gway_wireguard/gway/peer.py \
-            src/gway_wireguard/gway/device.py \
-            src/gway_wireguard/gway/hosts.py \
-            src/gway_wireguard/gway/token.py \
-            src/gway_wireguard/gway/dns.py \
-            src/gway_wireguard/gway/server.py
+            server/admin.py
+          python3 -m compileall -q src/gway_wire src/gway_wireguard
 
       - name: Validate version format
         run: grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' VERSION
@@ -87,20 +70,21 @@ jobs:
           export GWAY_DATA_HOME="${RUNNER_TEMP}/gway-data"
           export GWAY_CONFIG_HOME="${RUNNER_TEMP}/gway-config"
           gway register .
+          gway wire status --json
+          gway wire enroll --help
+          gway wire token create --help
+          gway wire device revoke --help
+          gway wire hosts sync --help
+          gway wire dns status --json
+          gway wire dns sync --help
+          gway wire dns ensure --help
+          gway wire dns delete --help
+          gway wire server deploy --help
+          gway wire server status --help
+          gway wire server check --help
+          gway wire server ready --help
           gway wireguard status --json
           gway wg status --json
-          gway wireguard enroll --help
-          gway wireguard token create --help
-          gway wireguard device revoke --help
-          gway wireguard hosts sync --help
-          gway wireguard dns status --json
-          gway wireguard dns sync --help
-          gway wireguard dns ensure --help
-          gway wireguard dns delete --help
-          gway wireguard server deploy --help
-          gway wireguard server status --help
-          gway wireguard server check --help
-          gway wireguard server ready --help
 
       - name: Test first-class GWAY Sigils
         shell: bash
@@ -108,9 +92,9 @@ jobs:
           export GWAY_DATA_HOME="${RUNNER_TEMP}/gway-data"
           export GWAY_CONFIG_HOME="${RUNNER_TEMP}/gway-config"
 
-          lazy="$(gway wireguard status --interface '[project.name]' --wg-bin /bin/false --json)"
-          command="$(gway wireguard status --interface '[command.name]' --wg-bin /bin/false --json)"
-          eager="$(gway wireguard status --interface '%[cwd]' --wg-bin /bin/false --json)"
+          lazy="$(gway wire status --interface '[project.name]' --wg-bin /bin/false --json)"
+          command="$(gway wire status --interface '[command.name]' --wg-bin /bin/false --json)"
+          eager="$(gway wire status --interface '%[cwd]' --wg-bin /bin/false --json)"
           mixed="$(gway wg status --interface '%[cwd]/[project.name]/[command.name]' --wg-bin /bin/false --json)"
 
           python3 - "$lazy" "$command" "$eager" "$mixed" <<'PY'
@@ -121,10 +105,10 @@ jobs:
           lazy, command, eager, mixed = (json.loads(value) for value in sys.argv[1:])
           cwd = os.getcwd()
 
-          assert lazy["interface"] == "wireguard"
+          assert lazy["interface"] == "wire"
           assert command["interface"] == "status"
           assert eager["interface"] == cwd
-          assert mixed["interface"] == f"{cwd}/wireguard/status"
+          assert mixed["interface"] == f"{cwd}/wire/status"
 
           for result in (lazy, command, eager, mixed):
               assert result["available"] is False
