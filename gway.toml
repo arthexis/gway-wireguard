@@ -1,6 +1,6 @@
 [project]
 name = "wire"
-aliases = ["wireguard"]
+aliases = ["wireguard", "wg"]
 
 [adapter]
 type = "python"
