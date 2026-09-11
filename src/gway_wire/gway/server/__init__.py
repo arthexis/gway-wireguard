@@ -5,8 +5,9 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from gway_wire.admin_ops import create_enrollment_token
+from gway_wire.admin_ops import create_enrollment_token, dns_status, list_devices, revoke_device
 from gway_wire.config import read_environment_file
+from gway_wire.peer_manager import PeerManager
 
 _DEFAULT_ENV_FILE = Path("/etc/gway-wireguard/server.env")
 _SUPPORTED_DNS_PROVIDERS = {"none", "disabled", "godaddy"}
@@ -109,6 +110,37 @@ def _readiness(
     }
 
 
+def _snapshot(env_file: Path = _DEFAULT_ENV_FILE, debug: bool = False) -> dict[str, object]:
+    """Read configured server state without performing validation or mutation."""
+    values = read_environment_file(env_file)
+    if not values:
+        return {"configured": False, "env_file": str(env_file)}
+
+    registry = Path(values.get("GWAY_REGISTRY_DB", "/var/lib/gway-wireguard/registry.sqlite3"))
+    wg_config = Path(values.get("GWAY_WG_CONFIG", "/etc/wireguard/gway.conf"))
+    result: dict[str, object] = {
+        "configured": True,
+        "domain": values.get("GWAY_BASE_DOMAIN") or None,
+        "interface": values.get("GWAY_WG_INTERFACE", "gway"),
+        "network": values.get("GWAY_WG_NETWORK") or None,
+        "gateway_address": values.get("GWAY_GATEWAY_ADDRESS") or None,
+        "endpoint": values.get("GWAY_GATEWAY_ENDPOINT") or None,
+        "enrollment_bind": values.get("GWAY_ENROLL_BIND") or None,
+        "enrollment_port": values.get("GWAY_ENROLL_PORT") or None,
+        "dns_provider": values.get("GWAY_DNS_PROVIDER", "none"),
+        "vpn_hostname": values.get("GWAY_VPN_HOSTNAME") or None,
+        "register_hostname": values.get("GWAY_REGISTER_HOSTNAME") or None,
+        "registry": str(registry),
+        "registry_exists": registry.is_file(),
+        "wireguard_config": str(wg_config),
+        "wireguard_config_exists": wg_config.is_file(),
+        "env_file": str(env_file),
+    }
+    if debug and wg_config.is_file():
+        result["managed_peers"] = PeerManager(wg_config, apply_runtime=False).managed_peers()
+    return result
+
+
 def deploy(
     domain: str | None = None,
     require_dns: bool = True,
@@ -122,16 +154,59 @@ def deploy(
     return {**result, **readiness, "success": bool(readiness["ready"])}
 
 
-def status() -> dict[str, object]:
-    """Show deployed gateway, registry, enrollment, and DNS status."""
-    return _run_installer("--status")
+def status(
+    env_file: Path = _DEFAULT_ENV_FILE,
+    debug: bool = False,
+) -> dict[str, object]:
+    """Return the configured server snapshot; optionally include debug detail."""
+    return _snapshot(env_file=env_file, debug=debug)
 
 
-def check() -> dict[str, object]:
-    """Validate server source and configuration defaults without changing the host."""
-    return _run_installer("--check")
+def check(
+    source: bool = False,
+    config: bool = False,
+    dns: bool = False,
+    peers: bool = False,
+    env_file: Path = _DEFAULT_ENV_FILE,
+) -> dict[str, object]:
+    """Run selected server checks, or all checks when none are selected."""
+    selected = {"source": source, "config": config, "dns": dns, "peers": peers}
+    if not any(selected.values()):
+        selected = {name: True for name in selected}
+
+    results: dict[str, object] = {}
+    if selected["source"]:
+        results["source"] = _run_installer("--check")
+    if selected["config"]:
+        results["config"] = _readiness(require_dns=False, env_file=env_file)
+    if selected["dns"]:
+        results["dns"] = dns_status()
+    if selected["peers"]:
+        snapshot = _snapshot(env_file=env_file)
+        config_path = Path(str(snapshot.get("wireguard_config", "/etc/wireguard/gway.conf")))
+        managed = (
+            PeerManager(config_path, apply_runtime=False).managed_peers()
+            if config_path.is_file()
+            else []
+        )
+        results["peers"] = {
+            "config": str(config_path),
+            "managed": managed,
+            "count": len(managed),
+        }
+    return results
 
 
 def token(device: str | None = None, ttl: int = 3600) -> dict[str, object]:
     """Create a one-time enrollment token, optionally scoped to one device."""
     return create_enrollment_token(device=device, ttl=ttl)
+
+
+def devices() -> list[dict[str, object]]:
+    """List enrolled devices from the server registry."""
+    return list_devices()
+
+
+def revoke(device: str) -> dict[str, object]:
+    """Revoke one enrolled device and remove its managed WireGuard access."""
+    return revoke_device(device)
