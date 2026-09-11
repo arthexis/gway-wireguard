@@ -6,14 +6,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from gway_wire.gway import server, token
+import gway_wire.gway as root
 from gway_wire.admin_ops import AdminSettings
+from gway_wire.gway import client, server
 
 
 class SimplifiedCommandTests(unittest.TestCase):
+    def test_root_namespace_has_no_role_specific_commands(self) -> None:
+        for name in ("status", "enroll", "token", "deploy"):
+            self.assertFalse(hasattr(root, name), name)
+
     @patch("gway_wire.gway.server._server_installer")
     @patch("gway_wire.gway.server.subprocess.run")
-    def test_plain_deploy_only_runs_installer(self, run, installer) -> None:
+    def test_plain_server_deploy_only_runs_installer(self, run, installer) -> None:
         path = Path("/managed/gway-wire/server/install.sh")
         installer.return_value = path
         run.return_value = subprocess.CompletedProcess(
@@ -27,7 +32,7 @@ class SimplifiedCommandTests(unittest.TestCase):
 
     @patch("gway_wire.gway.server._server_installer")
     @patch("gway_wire.gway.server.subprocess.run")
-    def test_deploy_domain_applies_readiness_gate(self, run, installer) -> None:
+    def test_server_deploy_domain_applies_readiness_gate(self, run, installer) -> None:
         path = Path("/managed/gway-wire/server/install.sh")
         installer.return_value = path
         run.return_value = subprocess.CompletedProcess(
@@ -61,16 +66,27 @@ class SimplifiedCommandTests(unittest.TestCase):
         self.assertTrue(result["ready"])
         self.assertEqual(result["domain"], "arthexis.com")
 
-    def test_token_is_direct_command(self) -> None:
+    def test_server_token_is_direct_server_command(self) -> None:
         with patch.object(AdminSettings, "from_env") as settings, patch(
-            "gway_wire.gway.create_enrollment_token",
+            "gway_wire.gway.server.create_enrollment_token",
             return_value={"token": "value", "device": "gway-004"},
         ) as create:
             settings.return_value = object()
-            result = token(device="gway-004", ttl=120)
+            result = server.token(device="gway-004", ttl=120)
 
         self.assertEqual(result["token"], "value")
         create.assert_called_once_with(device="gway-004", ttl=120)
+
+    @patch("gway_wire.gway.client.subprocess.run")
+    def test_client_status_is_role_scoped(self, run) -> None:
+        run.return_value = subprocess.CompletedProcess(
+            ["wg", "show", "gway"], 0, stdout="interface: gway\n", stderr=""
+        )
+
+        result = client.status()
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["interface"], "gway")
 
 
 if __name__ == "__main__":
