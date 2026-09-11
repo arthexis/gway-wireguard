@@ -6,10 +6,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from gway_wire.admin_ops import AdminSettings
-from gway_wire.gway import token
-from gway_wire.gway.device import list as device_list
-from gway_wire.gway.device import revoke
-from gway_wire.gway.hosts import sync
+from gway_wire.gway.server import token
+from gway_wire.gway.server.device import list as device_list
+from gway_wire.gway.server.device import revoke
+from gway_wire.gway.server.hosts import sync
 from gway_wire.peer_manager import PeerManager
 from gway_wire.registry import Registry
 
@@ -62,7 +62,7 @@ class GwayAdminCommandTests(unittest.TestCase):
             )
             registry.consume_token(conn, digest)
 
-    def test_token_uses_shared_registry(self) -> None:
+    def test_server_token_uses_shared_registry(self) -> None:
         with patch.object(AdminSettings, "from_env", return_value=self.settings):
             result = token(device="gway-004", ttl=120)
 
@@ -70,7 +70,7 @@ class GwayAdminCommandTests(unittest.TestCase):
         self.assertTrue(result["token"])
         self.assertTrue(self.db.exists())
 
-    def test_device_list_hosts_sync_and_revoke_share_domain_state(self) -> None:
+    def test_server_device_hosts_and_revoke_share_domain_state(self) -> None:
         self._enroll_fixture()
 
         with patch.object(AdminSettings, "from_env", return_value=self.settings):
