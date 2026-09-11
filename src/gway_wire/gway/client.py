@@ -47,13 +47,14 @@ def _enrollment_token_value(token: str | None, token_file: Path | None) -> str |
 
 def _token_was_issued_locally(
     token: str,
-    env_file: Path = _DEFAULT_SERVER_ENV_FILE,
+    env_file: Path | None = None,
 ) -> bool:
     """Return whether this host's server registry contains the supplied token."""
-    if not env_file.is_file():
+    active_env = env_file or _DEFAULT_SERVER_ENV_FILE
+    if not active_env.is_file():
         return False
     try:
-        values = read_environment_file(env_file)
+        values = read_environment_file(active_env)
     except (OSError, ValueError):
         return False
     registry = Path(
