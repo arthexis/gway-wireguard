@@ -49,6 +49,43 @@ class ShorthandCommandTests(unittest.TestCase):
         self.assertFalse(readiness.call_args.kwargs["require_dns"])
         run_installer.assert_called_once()
 
+    @patch("gway_wire.gway.server._readiness")
+    @patch("gway_wire.gway.server._run_installer", return_value={"success": True})
+    def test_deploy_provider_configures_godaddy_and_requires_dns(
+        self, run_installer, readiness
+    ) -> None:
+        readiness.return_value = {"ready": True, "dns_provider": "godaddy"}
+
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / "server.env"
+            result = server.deploy(
+                "gelectriic.com",
+                provider="godaddy",
+                env_file=env_file,
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["dns_provider"], "godaddy")
+        environment = run_installer.call_args.kwargs["env"]
+        self.assertEqual(environment["DNS_PROVIDER"], "godaddy")
+        self.assertTrue(readiness.call_args.kwargs["require_dns"])
+
+    def test_deploy_provider_aliases_must_agree(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must select the same provider"):
+            server.deploy(
+                "gelectriic.com",
+                dns_provider="godaddy",
+                provider="other",
+            )
+
+    def test_deploy_rejects_unsupported_provider_before_mutation(self) -> None:
+        with (
+            patch("gway_wire.gway.server._run_installer") as run_installer,
+            self.assertRaisesRegex(ValueError, "unsupported DNS provider"),
+        ):
+            server.deploy("gelectriic.com", provider="cloudflare")
+        run_installer.assert_not_called()
+
     @patch("gway_wire.gway.server._domain_preflight")
     def test_check_dns_alias_overrides_require_dns(self, preflight) -> None:
         preflight.return_value = {"deployable": True}
