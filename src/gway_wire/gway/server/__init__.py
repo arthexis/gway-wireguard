@@ -285,7 +285,8 @@ def check(
     domain: str,
     source: bool = False,
     config: bool = False,
-    dns_check: bool = False,
+    dns_provider: bool = False,
+    provider: bool = False,
     peers: bool = False,
     require_dns: bool = True,
     dns: bool | None = None,
@@ -299,7 +300,7 @@ def check(
     selected = {
         "source": source,
         "config": config,
-        "dns": dns_check,
+        "dns": dns_provider or provider,
         "peers": peers,
     }
     if not any(selected.values()):
@@ -337,7 +338,8 @@ def validate(
     domain: str,
     source: bool = False,
     config: bool = False,
-    dns_check: bool = False,
+    dns_provider: bool = False,
+    provider: bool = False,
     peers: bool = False,
     require_dns: bool = True,
     dns: bool | None = None,
@@ -349,7 +351,8 @@ def validate(
         domain,
         source=source,
         config=config,
-        dns_check=dns_check,
+        dns_provider=dns_provider,
+        provider=provider,
         peers=peers,
         require_dns=require_dns,
         dns=dns,
