@@ -72,7 +72,7 @@ jobs:
           gway register .
           gway wire status --json
           gway wire enroll --help
-          gway wire token create --help
+          gway wire token --help
           gway wire device revoke --help
           gway wire hosts sync --help
           gway wire dns status --json
@@ -82,7 +82,6 @@ jobs:
           gway wire server deploy --help
           gway wire server status --help
           gway wire server check --help
-          gway wire server ready --help
           gway wireguard status --json
           gway wg status --json
 
