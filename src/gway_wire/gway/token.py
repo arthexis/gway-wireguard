@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gway_wireguard.admin_ops import create_enrollment_token
+from gway_wire.admin_ops import create_enrollment_token
 
 
 def create(device: str | None = None, ttl: int = 3600) -> dict[str, object]:
