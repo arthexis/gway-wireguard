@@ -13,10 +13,10 @@ def test_distribution_uses_gway_wire_name() -> None:
     assert data["project"]["name"] == "gway-wire"
 
 
-def test_gway_project_uses_wire_with_compatibility_aliases() -> None:
+def test_gway_project_uses_wire_with_compatibility_alias() -> None:
     data = tomllib.loads((ROOT / "gway.toml").read_text())
     assert data["project"]["name"] == "wire"
-    assert {"wireguard", "wg"} <= set(data["project"]["aliases"])
+    assert data["project"]["aliases"] == ["wireguard"]
     assert data["adapter"]["module"] == "gway_wire.gway"
 
 
