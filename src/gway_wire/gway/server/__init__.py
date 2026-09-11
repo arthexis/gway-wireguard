@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -18,6 +19,10 @@ from gway_wire.peer_manager import PeerManager
 
 _DEFAULT_ENV_FILE = Path("/etc/gway-wireguard/server.env")
 _SUPPORTED_DNS_PROVIDERS = {"none", "disabled", "godaddy"}
+_DOMAIN_RE = re.compile(
+    r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+)
 
 
 def _server_installer() -> Path:
@@ -29,7 +34,10 @@ def _server_installer() -> Path:
     raise RuntimeError("could not locate gway-wire server installer")
 
 
-def _run_installer(*arguments: str) -> dict[str, object]:
+def _run_installer(
+    *arguments: str,
+    env: dict[str, str] | None = None,
+) -> dict[str, object]:
     """Run the server installer with the supplied mode arguments."""
     installer = _server_installer()
     result = subprocess.run(
@@ -37,6 +45,7 @@ def _run_installer(*arguments: str) -> dict[str, object]:
         check=False,
         capture_output=True,
         text=True,
+        env=env,
     )
     return {
         "success": result.returncode == 0,
@@ -44,6 +53,14 @@ def _run_installer(*arguments: str) -> dict[str, object]:
         "output": result.stdout.strip(),
         "error": result.stderr.strip(),
     }
+
+
+def _normalize_domain(domain: str) -> str:
+    """Normalize and validate a deployment domain."""
+    value = domain.strip().lower().rstrip(".")
+    if not _DOMAIN_RE.fullmatch(value):
+        raise ValueError(f"invalid domain: {domain!r}")
+    return value
 
 
 def _readiness(
@@ -130,7 +147,10 @@ def _snapshot(
     debug: bool = False,
 ) -> dict[str, object]:
     """Read configured server state without performing validation or mutation."""
-    values = read_environment_file(env_file)
+    try:
+        values = read_environment_file(env_file)
+    except OSError:
+        return {"configured": False, "env_file": str(env_file)}
     if not values:
         return {"configured": False, "env_file": str(env_file)}
 
@@ -177,18 +197,70 @@ def _dns_status_for(env_file: Path) -> dict[str, object]:
             os.environ["GWAY_SERVER_ENV_FILE"] = previous
 
 
+def _domain_preflight(
+    domain: str,
+    env_file: Path,
+    require_dns: bool,
+) -> dict[str, object]:
+    """Inspect whether a domain is configured or can be deployed without mutation."""
+    target = _normalize_domain(domain)
+    if env_file.is_file():
+        snapshot = _snapshot(env_file=env_file)
+        configured_domain = str(snapshot.get("domain") or "").strip().lower()
+        if configured_domain == target:
+            readiness = _readiness(
+                domain=target,
+                require_dns=require_dns,
+                env_file=env_file,
+            )
+            return {
+                "domain": target,
+                "configured": True,
+                "already_configured": True,
+                "deployable": bool(readiness["ready"]),
+                **readiness,
+            }
+        return {
+            "domain": target,
+            "configured": False,
+            "already_configured": False,
+            "deployable": False,
+            "ready": False,
+            "configured_domain": configured_domain or None,
+            "issues": [
+                f"server is already configured for {configured_domain or '<unknown>'}"
+            ],
+        }
+
+    source = _run_installer("--check")
+    return {
+        "domain": target,
+        "configured": False,
+        "already_configured": False,
+        "deployable": bool(source["success"]),
+        "ready": False,
+        "preflight": {"source": source},
+        "issues": [] if source["success"] else ["server source/configuration preflight failed"],
+    }
+
+
 def deploy(
-    domain: str | None = None,
+    domain: str,
     require_dns: bool = True,
     env_file: Path = _DEFAULT_ENV_FILE,
     protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
-    """Deploy the current checkout, then optionally validate a production domain."""
+    """Mutate this server into a deployment for DOMAIN, then validate readiness."""
     require_protocol(protocol)
-    result = _run_installer()
-    if not result["success"] or domain is None:
-        return result
-    readiness = _readiness(domain=domain, require_dns=require_dns, env_file=env_file)
+    target = _normalize_domain(domain)
+    environment = os.environ.copy()
+    environment["BASE_DOMAIN"] = target
+    environment["VPN_HOSTNAME"] = f"vpn.{target}"
+    environment["REGISTER_HOSTNAME"] = f"register.{target}"
+    result = _run_installer(env=environment)
+    if not result["success"]:
+        return {**result, "domain": target}
+    readiness = _readiness(domain=target, require_dns=require_dns, env_file=env_file)
     return {**result, **readiness, "success": bool(readiness["ready"])}
 
 
@@ -203,26 +275,32 @@ def status(
 
 
 def check(
+    domain: str,
     source: bool = False,
     config: bool = False,
     dns: bool = False,
     peers: bool = False,
+    require_dns: bool = True,
     env_file: Path = _DEFAULT_ENV_FILE,
     protocol: str = DEFAULT_PROTOCOL,
 ) -> dict[str, object]:
-    """Run selected server checks, or all checks when none are selected."""
+    """Validate DOMAIN non-mutatively, with selectable active checks."""
     require_protocol(protocol)
+    target = _normalize_domain(domain)
     selected = {"source": source, "config": config, "dns": dns, "peers": peers}
     if not any(selected.values()):
-        selected = {name: True for name in selected}
+        return _domain_preflight(target, env_file, require_dns)
 
-    results: dict[str, object] = {}
+    results: dict[str, object] = {"domain": target}
     if selected["source"]:
         results["source"] = _run_installer("--check")
     if selected["config"]:
-        results["config"] = _readiness(require_dns=False, env_file=env_file)
+        results["config"] = _domain_preflight(target, env_file, require_dns=False)
     if selected["dns"]:
-        results["dns"] = _dns_status_for(env_file)
+        if env_file.is_file():
+            results["dns"] = _dns_status_for(env_file)
+        else:
+            results["dns"] = {"available": False, "configured": False}
     if selected["peers"]:
         snapshot = _snapshot(env_file=env_file)
         config_path = Path(
@@ -239,6 +317,29 @@ def check(
             "count": len(managed),
         }
     return results
+
+
+def validate(
+    domain: str,
+    source: bool = False,
+    config: bool = False,
+    dns: bool = False,
+    peers: bool = False,
+    require_dns: bool = True,
+    env_file: Path = _DEFAULT_ENV_FILE,
+    protocol: str = DEFAULT_PROTOCOL,
+) -> dict[str, object]:
+    """Alias for check."""
+    return check(
+        domain,
+        source=source,
+        config=config,
+        dns=dns,
+        peers=peers,
+        require_dns=require_dns,
+        env_file=env_file,
+        protocol=protocol,
+    )
 
 
 def token(

@@ -17,6 +17,7 @@ PUBLIC_COMMANDS = (
     server.deploy,
     server.status,
     server.check,
+    server.validate,
     server.token,
     server.devices,
     server.revoke,
