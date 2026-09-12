@@ -59,12 +59,13 @@ jobs:
         run: |
           set -euo pipefail
           GWAY_BIN="$(sudo -n sh -c 'command -v gway')"
-          PYTHON_BIN="$(sudo -n sh -c 'command -v python3')"
+          GWAY_PYTHON="/opt/gway/venv/bin/python"
+          test -x "${GWAY_PYTHON}"
           echo "gway executable: ${GWAY_BIN}"
           echo "gway wrapper header:"
           sudo -n sed -n '1,20p' "${GWAY_BIN}"
-          echo "diagnostic python: ${PYTHON_BIN}"
-          sudo -n "${PYTHON_BIN}" - <<'PY'
+          echo "gway python: ${GWAY_PYTHON}"
+          sudo -n "${GWAY_PYTHON}" - <<'PY'
           import importlib.metadata as metadata
           import inspect
           import sys
@@ -86,8 +87,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PYTHON_BIN="$(sudo -n sh -c 'command -v python3')"
-          sudo -n "${PYTHON_BIN}" - <<'PY'
+          GWAY_PYTHON="/opt/gway/venv/bin/python"
+          test -x "${GWAY_PYTHON}"
+          sudo -n "${GWAY_PYTHON}" - <<'PY'
           import pprint
 
           from gway_wire.surface.server import deploy
