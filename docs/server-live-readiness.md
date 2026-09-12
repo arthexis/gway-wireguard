@@ -4,30 +4,43 @@ This document defines the next server-readiness increment for `gway-wire`, based
 
 ## Goal
 
-`gway wire server check <domain>` should answer the operational question: **is this gateway actually ready for a fresh remote device to enroll and establish WireGuard connectivity?**
+`gway wire server check <fqdn>` should answer the operational question: **is this gateway actually ready for a fresh remote device to enroll and establish WireGuard connectivity?**
 
 A configuration-only success is not sufficient. The default check must cover the same prerequisites that were manually validated during the live test.
 
+## Endpoint identity
+
+Wire accepts the exact public enrollment hostname as an FQDN. It does not infer a base domain, prepend `register`, or split a hostname into domain/subdomain components.
+
+The canonical CLI spelling is:
+
+```text
+gway wire server deploy --fqdn register.example.com
+```
+
+`--domain` is retained only as an alias for `--fqdn`. Both spellings feed the same internal `fqdn` value; there is no second domain value and conflicting duplicate values must be rejected.
+
 ## Ownership boundary
 
-`gway-wire` owns the VPN/enrollment service and describes the public enrollment endpoint it needs.
+`gway-wire` owns the VPN/enrollment service, its lifecycle, and the decision to expose its enrollment endpoint.
 
-`gway-web` owns public HTTP(S) exposure, including:
+`gway-web` is a dependency used by Wire to realize public HTTP(S) exposure for the exact FQDN supplied by Wire, including:
 
-- the `register.<domain>` site definition;
 - reverse-proxy exposure to `127.0.0.1:<enrollment-port>`;
-- public DNS record provisioning;
+- provider-backed public DNS record provisioning;
 - TLS certificate provisioning/renewal;
 - Nginx/backend activation;
 - public HTTPS and health validation.
 
-`gway-wire` should not grow another Nginx/Certbot/DNS implementation. It should delegate public endpoint setup and checks through the `gway web` surface.
+`gway-wire` should not grow another Nginx/Certbot/DNS implementation. It should call Web's Python capability directly.
 
-The desired endpoint is:
+Web should not expose a separate user-facing `register` or `unregister` lifecycle for this operation. Wire calls Web, not the other way around, and Wire remains the owner of the enrollment endpoint lifecycle.
+
+For an FQDN such as `register.example.com`, the desired endpoint is:
 
 ```text
-https://register.<domain>/v1/enroll
-        -> gway web
+https://register.example.com/v1/enroll
+        -> gway-web capability
         -> 127.0.0.1:8787
         -> gway-wire enrollment service
 ```
@@ -38,26 +51,25 @@ The enrollment service must remain loopback-only by default. Port 8787 must not 
 
 The current `gway-web` implementation can define/serve sites, manage Certbot, test Nginx, and perform public checks, but its DNS module currently targets ACME DNS-01 TXT records. Before Wire can delegate the whole public endpoint transaction, Web must expose provider-neutral ordinary record management for the site's public address (initially an A record; AAAA later where appropriate).
 
-The intended Wire orchestration is equivalent to:
+The dependency-facing contract should be an idempotent capability along the lines of:
 
-```text
-gway web site wire-register --create \
-  --domain register.example.com \
-  --host 127.0.0.1 \
-  --port 8787 \
-  --health-path /health \
-  --certbot
-
-gway web dns wire-register --ensure
-gway web serve wire-register ...
-gway web check wire-register
+```python
+web.ensure(
+    fqdn="register.example.com",
+    upstream="http://127.0.0.1:8787",
+    health_path="/health",
+    certbot=True,
+    dns_provider="godaddy",
+)
 ```
 
-Exact Web CLI spelling may evolve, but Wire should depend on the capability rather than provider-specific APIs.
+The operation should validate the provider and desired external state before committing local managed state, reconcile an existing matching site safely, and leave no successful local registration if provider/public setup fails.
+
+Wire's readiness path should use Web's read-only check capability for the same exact FQDN. No provider-specific API should leak into Wire.
 
 ## Default server checks
 
-With no selector flags, `gway wire server check <domain>` should run **all** applicable checks and return a structured result for each. Selector flags should allow running one subset when diagnosing a failure.
+With no selector flags, `gway wire server check <fqdn>` should run **all** applicable checks and return a structured result for each. Selector flags should allow running one subset when diagnosing a failure.
 
 ### 1. Source / package readiness
 
@@ -70,11 +82,12 @@ Validate that the installed Wire project/server source can be used without mutat
 Validate:
 
 - deployed environment exists and parses;
-- configured base domain matches the requested domain;
+- configured enrollment FQDN matches the requested FQDN;
 - registry exists;
-- expected `vpn.<domain>` and `register.<domain>` hostnames match;
 - required paths are present;
 - selected protocol is supported.
+
+Wire must not derive `register.<domain>` or otherwise reinterpret the supplied FQDN.
 
 ### 3. WireGuard tooling
 
@@ -145,15 +158,15 @@ A successful response proves the process behind the listener is the expected enr
 
 ### 8. Public DNS
 
-Delegate to `gway web`.
+Delegate to `gway-web` for the supplied FQDN.
 
-Validate that `register.<domain>` resolves to the intended public address. Provider credentials being syntactically valid are not enough; the live record must be checked.
+Validate that the FQDN resolves to the intended public address. Provider credentials being syntactically valid are not enough; the live record must be checked.
 
 DNS setup should also be delegated to Web so Wire does not duplicate GoDaddy-specific record lifecycle code for the enrollment endpoint.
 
 ### 9. Web exposure / reverse proxy
 
-Delegate to `gway web check wire-register --nginx` (or equivalent capability).
+Delegate to Web's check capability for the supplied FQDN.
 
 Validate that the public site is actually enabled and routes to the enrollment loopback service.
 
@@ -161,12 +174,12 @@ This catches the exact failure seen in live validation where Wire reported the e
 
 ### 10. TLS certificate
 
-Delegate to Web's certificate check.
+Delegate to Web's certificate check for the supplied FQDN.
 
 Validate:
 
 - certificate exists;
-- certificate matches `register.<domain>`;
+- certificate matches the FQDN;
 - certificate is currently valid;
 - public HTTPS presents that certificate.
 
@@ -174,12 +187,12 @@ This catches the fallback/expired-certificate failure observed during the live t
 
 ### 11. Public HTTPS / health
 
-Delegate to `gway web check` public/health checks.
+Delegate to Web's public/health checks for the supplied FQDN.
 
-From the server this should validate the complete public path as far as practical:
+From the server this should validate the complete public path as far as practical, for example:
 
 ```text
-https://register.<domain>/health
+https://register.example.com/health
 ```
 
 The result must distinguish DNS, TLS, HTTP, and application-health failures so operators know which layer to repair.
@@ -217,7 +230,7 @@ The command should return an aggregate readiness result plus individual checks, 
 
 ```python
 {
-    "domain": "example.com",
+    "fqdn": "register.example.com",
     "ready": False,
     "checks": [
         {"check": "wireguard-tool", "ok": True, "detail": "wireguard-tools ..."},
@@ -233,14 +246,16 @@ A failed diagnostic check should normally be represented in the result rather th
 
 ## Deploy behavior
 
-`gway wire server deploy --domain <domain>` should converge only Wire-owned state directly. Public enrollment setup should be requested through Web:
+`gway wire server deploy --fqdn <fqdn>` should converge Wire-owned state directly and request public enrollment exposure through Web as one dependency operation:
 
-1. deploy/validate WireGuard server and enrollment service;
-2. declare/update the `wire-register` Web site;
-3. ask Web to ensure public DNS;
-4. ask Web to serve the site with TLS;
-5. run the full readiness suite;
-6. report success only when required checks pass.
+1. validate the exact FQDN and deploy the WireGuard server/enrollment service;
+2. ask Web to ensure the FQDN's provider-backed DNS, reverse proxy, TLS, and public exposure transactionally;
+3. run the full readiness suite, including Web's read-only checks for that FQDN;
+4. report success only when required checks pass.
+
+`--domain <fqdn>` is an alias for the same input; it does not represent a separate base domain.
+
+Web must not expose an independent user-facing registration/unregistration workflow for this endpoint. The lifecycle remains attached to Wire's deploy/remove operations.
 
 This preserves existing Nginx sites such as Odoo and other hosted applications because Web owns transactional site configuration rather than Wire editing Nginx globally.
 
@@ -248,7 +263,7 @@ This preserves existing Nginx sites such as Odoo and other hosted applications b
 
 - Must continue to support Ubuntu 22 / Python 3.10 as the server compatibility floor.
 - Checks are read-only; `server check` must never mutate DNS, certificates, Nginx, interfaces, peers, or registry state.
-- `server deploy` may mutate only through explicit owning capabilities.
+- `server deploy` may mutate public exposure only through Web's owning capability.
 - Enrollment tokens must not be issued automatically as part of readiness checks.
 - No check should require at least one enrolled device.
 - Existing/manual WireGuard peers must be preserved.
@@ -257,12 +272,13 @@ This preserves existing Nginx sites such as Odoo and other hosted applications b
 
 The implementation following this proposal is complete when:
 
-1. A fresh Ubuntu 22 server with WireGuard installed but no Web site fails readiness with a specific Web/public-endpoint reason.
-2. Missing `wg`, missing `gway` interface, missing UDP 51820 listener, missing loopback 8787 listener, and failed local enrollment health are individually detected.
-3. A valid local service with missing `register.<domain>` DNS fails the DNS/public check.
-4. A correct DNS record with an expired/wrong certificate fails TLS readiness, matching the failure observed in the live test.
-5. `gway web` is the owner used to provision DNS, Nginx exposure, Certbot, and public endpoint checks.
-6. A fresh server with zero enrolled devices can still report ready.
-7. Existing manual peers remain valid and are reported without being adopted or removed.
-8. Unit tests cover each failure independently and an all-green aggregate case.
-9. Ubuntu 22 / Python 3.10 CI remains green.
+1. `server deploy --fqdn register.example.com` and `server deploy --domain register.example.com` resolve to the same canonical `fqdn` input without domain/subdomain inference.
+2. A fresh Ubuntu 22 server with WireGuard installed but no Web exposure fails readiness with a specific Web/public-endpoint reason.
+3. Missing `wg`, missing `gway` interface, missing UDP 51820 listener, missing loopback 8787 listener, and failed local enrollment health are individually detected.
+4. A valid local service with missing DNS for the supplied FQDN fails the DNS/public check.
+5. A correct DNS record with an expired/wrong certificate fails TLS readiness, matching the failure observed in the live test.
+6. `gway-web` is the dependency used to provision DNS, Nginx exposure, Certbot, and public endpoint checks, without a separate user-facing Web register/unregister operation.
+7. A fresh server with zero enrolled devices can still report ready.
+8. Existing manual peers remain valid and are reported without being adopted or removed.
+9. Unit tests cover each failure independently and an all-green aggregate case.
+10. Ubuntu 22 / Python 3.10 CI remains green.
