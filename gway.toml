@@ -4,4 +4,4 @@ aliases = ["wireguard", "wg"]
 
 [adapter]
 type = "python"
-module = "gway_wire.gway"
+module = "gway_wire.surface"
