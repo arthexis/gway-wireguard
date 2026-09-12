@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,9 +20,7 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
             "register.example.com",
         )
         with self.assertRaisesRegex(ValueError, "must agree"):
-            server._one_fqdn(
-                (), fqdn="register.example.com", domain="example.com"
-            )
+            server._one_fqdn((), fqdn="register.example.com", domain="example.com")
 
     @patch("gway_wire.surface.server.exposure_ensure")
     @patch("gway_wire.surface.server.check")
@@ -86,7 +85,12 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
     def test_deploy_restores_environment_when_web_exposure_fails(
         self, run_installer, ensure
     ) -> None:
-        run_installer.return_value = {"success": True, "exit_code": 0, "output": "", "error": ""}
+        run_installer.return_value = {
+            "success": True,
+            "exit_code": 0,
+            "output": "",
+            "error": "",
+        }
         ensure.side_effect = RuntimeError("public health failed")
         with tempfile.TemporaryDirectory() as directory:
             env = Path(directory) / "server.env"
@@ -107,6 +111,34 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertIn("public health failed", result["web"]["error"])
         self.assertEqual(restored, original)
+
+    def test_wireguard_check_detects_missing_tooling(self) -> None:
+        with patch("gway_wire.surface.server.shutil.which", return_value=None):
+            result = server._wireguard({"GWAY_WG_INTERFACE": "gway"})
+        self.assertFalse(result["ok"])
+        self.assertIn("wg executable not found", result["detail"])
+
+    def test_udp_listener_check_detects_missing_port(self) -> None:
+        observed = subprocess.CompletedProcess(
+            ["ss", "-lun"], 0, stdout="State Recv-Q Send-Q Local Address:Port\n", stderr=""
+        )
+        with (
+            patch("gway_wire.surface.server.shutil.which", return_value="/usr/bin/ss"),
+            patch("gway_wire.surface.server.subprocess.run", return_value=observed),
+        ):
+            result = server._listener({})
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["protocol"], "udp")
+        self.assertEqual(result["port"], 51820)
+
+    def test_enrollment_check_detects_missing_loopback_health(self) -> None:
+        with patch("gway_wire.surface.server.urlopen", side_effect=OSError("refused")):
+            result = server._enrollment(
+                {"GWAY_ENROLL_BIND": "127.0.0.1", "GWAY_ENROLL_PORT": "8787"},
+                1.0,
+            )
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["url"], "http://127.0.0.1:8787/health")
 
     @patch("gway_wire.surface.server._peers", return_value={"ok": True, "count": 0})
     @patch("gway_wire.surface.server._web")
@@ -131,6 +163,7 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
             "checks": [
                 {"check": "dns", "ok": True},
                 {"check": "certificate", "ok": False},
+                {"check": "tls", "ok": False},
                 {"check": "public_health", "ok": False},
             ],
         }
@@ -165,6 +198,47 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
         self.assertFalse(result["checks"]["tls"]["ok"])
         self.assertFalse(result["checks"]["public"]["ok"])
         run_installer.assert_called_once_with("--check")
+
+    @patch("gway_wire.surface.server._peers", return_value={"ok": True, "count": 0})
+    @patch("gway_wire.surface.server._web")
+    @patch("gway_wire.surface.server._enrollment", return_value={"ok": True})
+    @patch("gway_wire.surface.server._listener", return_value={"ok": True})
+    @patch("gway_wire.surface.server._wireguard", return_value={"ok": True})
+    @patch("gway_wire.surface.server._local_config", return_value={"ready": True, "ok": True})
+    @patch("gway_wire.surface.server.legacy._run_installer", return_value={"success": True})
+    def test_full_readiness_can_be_green_with_zero_managed_peers(
+        self,
+        run_installer,
+        local_config,
+        wireguard,
+        listener,
+        enrollment,
+        web_check,
+        peers,
+    ) -> None:
+        web_check.return_value = {
+            "fqdn": "register.example.com",
+            "ok": True,
+            "checks": [
+                {"check": "dns", "ok": True},
+                {"check": "certificate", "ok": True},
+                {"check": "tls", "ok": True},
+                {"check": "public_health", "ok": True},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / "server.env"
+            env.write_text(
+                "GWAY_BASE_DOMAIN=example.com\n"
+                "GWAY_REGISTER_HOSTNAME=register.example.com\n"
+                "GWAY_DNS_PROVIDER=godaddy\n"
+                "GWAY_PUBLIC_GATEWAY_IP=203.0.113.9\n",
+                encoding="utf-8",
+            )
+            result = server.check(fqdn="register.example.com", env_file=env)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["checks"]["peers"]["count"], 0)
 
     def test_status_reports_exact_public_fqdn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
