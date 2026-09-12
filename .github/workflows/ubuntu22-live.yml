@@ -1,0 +1,70 @@
+name: Ubuntu 22 Live Integration
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# This workflow intentionally never runs for pull_request. The self-hosted runner
+# is the live Ubuntu 22 gateway, so only trusted main commits may execute here.
+concurrency:
+  group: ubuntu22-live-gateway
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Live gateway readiness
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 15
+
+    steps:
+      - name: Verify trusted Ubuntu 22 gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          . /etc/os-release
+          test "${ID}" = "ubuntu"
+          test "${VERSION_ID}" = "22.04"
+          uname -a
+          python3 --version
+          sudo -n true
+
+      - name: Upgrade Web from main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if sudo -n gway web --help >/dev/null 2>&1; then
+            sudo -n gway upgrade web --force
+          else
+            sudo -n gway install web
+          fi
+
+      - name: Upgrade Wire from main
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n gway upgrade wire --force
+
+      - name: Verify live readiness and public health
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=0
+
+          sudo -n gway wire server check --fqdn register.arthexis.com || status=$?
+
+          if ! curl \
+            --fail \
+            --show-error \
+            --silent \
+            --max-time 10 \
+            https://register.arthexis.com/health; then
+            status=1
+          else
+            echo
+          fi
+
+          exit "${status}"
