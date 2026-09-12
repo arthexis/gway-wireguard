@@ -9,13 +9,18 @@ permissions:
   contents: read
 
 # This workflow intentionally never runs for pull_request. The self-hosted runner
-# is the live Ubuntu 22 gateway, so only trusted main commits may execute here.
+# is the live Ubuntu 22 gateway, so only trusted main commits initiated by arthexis
+# may execute here.
 concurrency:
   group: ubuntu22-live-gateway
   cancel-in-progress: false
 
 jobs:
   live:
+    if: >-
+      github.actor == 'arthexis' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     name: Live gateway readiness
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 15
