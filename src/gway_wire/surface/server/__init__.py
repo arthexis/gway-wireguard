@@ -86,6 +86,19 @@ def _public_address(values: dict[str, str], explicit: str | None) -> str | None:
     return host
 
 
+def _port_value(
+    values: dict[str, str], key: str, default: int
+) -> tuple[int | None, str | None]:
+    raw = values.get(key, str(default)).strip() or str(default)
+    try:
+        port = int(raw)
+    except ValueError:
+        return None, f"{key} must be an integer port, got {raw!r}"
+    if not 1 <= port <= 65535:
+        return None, f"{key} must be between 1 and 65535, got {port}"
+    return port, None
+
+
 @contextmanager
 def _web_environment(values: dict[str, str]):
     """Expose existing Wire provider configuration to Web for one operation."""
@@ -135,21 +148,80 @@ def _wireguard(values: dict[str, str]) -> dict[str, object]:
     interface = values.get("GWAY_WG_INTERFACE", "gway")
     if executable is None:
         return {"ok": False, "detail": "wg executable not found", "interface": interface}
+
+    version = subprocess.run(
+        [executable, "--version"], check=False, capture_output=True, text=True
+    )
+    if version.returncode != 0:
+        return {
+            "ok": False,
+            "interface": interface,
+            "detail": version.stderr.strip() or "wg --version failed",
+        }
+
     result = subprocess.run(
         [executable, "show", interface], check=False, capture_output=True, text=True
     )
+    if result.returncode != 0:
+        return {
+            "ok": False,
+            "interface": interface,
+            "version": version.stdout.strip(),
+            "detail": result.stderr.strip() or result.stdout.strip(),
+        }
+
+    output = result.stdout
+    public_key = None
+    listen_port = None
+    peer_count = 0
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("public key:"):
+            public_key = stripped.partition(":")[2].strip() or None
+        elif stripped.startswith("listening port:"):
+            listen_port = stripped.partition(":")[2].strip() or None
+        elif stripped.startswith("peer:"):
+            peer_count += 1
+
+    link_ok = True
+    link_detail = None
+    ip_bin = shutil.which("ip")
+    if ip_bin is not None:
+        link = subprocess.run(
+            [ip_bin, "link", "show", "dev", interface],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        link_detail = link.stdout.strip() or link.stderr.strip()
+        first_line = link.stdout.splitlines()[0] if link.stdout.splitlines() else ""
+        flags = first_line.partition("<")[2].partition(">")[0].split(",")
+        link_ok = link.returncode == 0 and "UP" in flags
+
     return {
-        "ok": result.returncode == 0,
+        "ok": bool(public_key) and link_ok,
         "interface": interface,
-        "detail": result.stderr.strip() or result.stdout.strip(),
+        "version": version.stdout.strip(),
+        "public_key": public_key,
+        "listen_port": listen_port,
+        "peer_count": peer_count,
+        "link": link_detail,
+        "detail": output.strip(),
     }
 
 
 def _listener(values: dict[str, str]) -> dict[str, object]:
-    port = values.get("GWAY_WG_PORT", "51820").strip() or "51820"
+    port, error = _port_value(values, "GWAY_WG_PORT", 51820)
+    if error is not None or port is None:
+        return {"ok": False, "detail": error, "port": None, "protocol": "udp"}
     executable = shutil.which("ss")
     if executable is None:
-        return {"ok": False, "detail": "ss executable not found", "port": int(port)}
+        return {
+            "ok": False,
+            "detail": "ss executable not found",
+            "port": port,
+            "protocol": "udp",
+        }
     result = subprocess.run(
         [executable, "-lun"], check=False, capture_output=True, text=True
     )
@@ -157,12 +229,14 @@ def _listener(values: dict[str, str]) -> dict[str, object]:
         line.rstrip().endswith(f":{port}") or f":{port} " in line
         for line in result.stdout.splitlines()
     )
-    return {"ok": found, "port": int(port), "protocol": "udp"}
+    return {"ok": found, "port": port, "protocol": "udp"}
 
 
 def _enrollment(values: dict[str, str], timeout: float) -> dict[str, object]:
     host = values.get("GWAY_ENROLL_BIND", "127.0.0.1")
-    port = int(values.get("GWAY_ENROLL_PORT", "8787"))
+    port, error = _port_value(values, "GWAY_ENROLL_PORT", 8787)
+    if error is not None or port is None:
+        return {"ok": False, "url": None, "status": None, "detail": error}
     url = f"http://{host}:{port}/health"
     try:
         with urlopen(Request(url, method="GET"), timeout=timeout) as response:  # noqa: S310
@@ -247,7 +321,15 @@ def deploy(
     changes = {"GWAY_REGISTER_HOSTNAME": target}
     if selected_provider is not None:
         changes["GWAY_DNS_PROVIDER"] = selected_provider
+    env_existed = env_file.is_file()
     original_env = _replace_env_values(env_file, changes)
+
+    def rollback_environment() -> None:
+        if env_existed:
+            if original_env is not None:
+                env_file.write_text(original_env, encoding="utf-8")
+        else:
+            env_file.unlink(missing_ok=True)
 
     environment = os.environ.copy()
     environment["REGISTER_HOSTNAME"] = target
@@ -255,15 +337,22 @@ def deploy(
         environment["DNS_PROVIDER"] = selected_provider
     installer = legacy._run_installer(env=environment)
     if not installer["success"]:
-        if original_env is not None:
-            env_file.write_text(original_env, encoding="utf-8")
+        rollback_environment()
         return {**installer, "fqdn": target, "success": False}
 
     values = _values(env_file)
     selected_provider = _selected_provider(values, dns_provider, provider)
     address = _public_address(values, public_address)
     bind = values.get("GWAY_ENROLL_BIND", "127.0.0.1")
-    port = int(values.get("GWAY_ENROLL_PORT", "8787"))
+    port, port_error = _port_value(values, "GWAY_ENROLL_PORT", 8787)
+    if port_error is not None or port is None:
+        rollback_environment()
+        return {
+            **installer,
+            "fqdn": target,
+            "success": False,
+            "web": {"success": False, "error": port_error},
+        }
     upstream = f"http://{bind}:{port}"
     email = cert_email or values.get("GWAY_CERTBOT_EMAIL") or os.environ.get("GWAY_CERTBOT_EMAIL")
 
@@ -281,8 +370,7 @@ def deploy(
                 agree_tos=True,
             )
     except Exception as exc:
-        if original_env is not None:
-            env_file.write_text(original_env, encoding="utf-8")
+        rollback_environment()
         return {
             **installer,
             "fqdn": target,
@@ -364,6 +452,8 @@ def check(
     if not any(selected.values()):
         for key in selected:
             selected[key] = True
+        if not dns_required:
+            selected["dns"] = False
 
     checks: dict[str, object] = {}
     if selected["source"]:
@@ -392,7 +482,7 @@ def check(
         if selected["dns"]:
             checks["dns"] = _web_subset(observed, {"dns"})
         if selected["tls"]:
-            checks["tls"] = _web_subset(observed, {"certificate"})
+            checks["tls"] = _web_subset(observed, {"certificate", "tls"})
         if selected["public"]:
             checks["public"] = _web_subset(
                 observed, {"reachability", "public", "public_health"}
@@ -403,9 +493,11 @@ def check(
     def passed(value: object) -> bool:
         return isinstance(value, dict) and bool(value.get("ok"))
 
+    ready = bool(checks) and all(passed(value) for value in checks.values())
     return {
         "fqdn": target,
-        "ok": bool(checks) and all(passed(value) for value in checks.values()),
+        "ok": ready,
+        "ready": ready,
         "checks": checks,
     }
 
