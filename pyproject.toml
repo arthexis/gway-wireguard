@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [
-    "gway-web>=0.1.0",
+    # Minimum compatible Web API: 0.1.0. Track latest main until gway-web is published.
+    "gway-web @ git+https://github.com/arthexis/gway-web.git@main",
 ]
 
 [tool.setuptools]
