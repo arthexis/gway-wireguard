@@ -36,14 +36,20 @@ jobs:
           python3 --version
           sudo -n true
 
+      - name: Upgrade GWAY from main
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n gway upgrade gway --force
+
       - name: Upgrade Wire from main
         shell: bash
         run: |
           set -euo pipefail
           sudo -n gway upgrade wire --force
 
-      # Keep Web last so Wire's package dependency cannot replace a newer Web
-      # checkout. This makes the live gateway exercise current gway-web main.
+      # Keep Web last so its managed checkout is current as well as the dependency
+      # copy refreshed inside Wire's own environment.
       - name: Upgrade Web from main
         shell: bash
         run: |
@@ -71,9 +77,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo -n gway wire server deploy \
+          result="$(sudo -n gway --json wire server deploy \
             --fqdn register.arthexis.com \
-            --cert-email tecnologia@gelectriic.com
+            --cert-email tecnologia@gelectriic.com)"
+          printf '%s\n' "${result}"
+          printf '%s\n' "${result}" | grep -Eq '"success"[[:space:]]*:[[:space:]]*true'
 
       - name: Verify live readiness and public health
         shell: bash
