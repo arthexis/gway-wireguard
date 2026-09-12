@@ -52,13 +52,51 @@ jobs:
             sudo -n gway install web
           fi
 
+      - name: Diagnose installed Web runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          GWAY_BIN="$(sudo -n sh -c 'command -v gway')"
+          GWAY_PY="$(sudo -n head -n 1 "${GWAY_BIN}" | sed 's/^#!//')"
+          echo "gway executable: ${GWAY_BIN}"
+          echo "gway interpreter: ${GWAY_PY}"
+          sudo -n "${GWAY_PY}" - <<'PY'
+          import importlib.metadata as metadata
+          import inspect
+          import sys
+
+          import gway_web
+          import gway_web.certbot
+          import gway_web.exposure
+
+          print("python:", sys.executable)
+          print("gway-web version:", metadata.version("gway-web"))
+          print("gway_web:", gway_web.__file__)
+          print("gway_web.certbot:", gway_web.certbot.__file__)
+          print("gway_web.exposure:", gway_web.exposure.__file__)
+          renew_source = inspect.getsource(gway_web.certbot.renew)
+          print("managed-cert reuse guard present:", "deploy_hook is None and current.ready" in renew_source)
+          PY
+
       - name: Deploy live enrollment endpoint
         shell: bash
         run: |
           set -euo pipefail
-          sudo -n gway wire server deploy \
-            --fqdn register.arthexis.com \
-            --cert-email tecnologia@gelectriic.com
+          GWAY_BIN="$(sudo -n sh -c 'command -v gway')"
+          GWAY_PY="$(sudo -n head -n 1 "${GWAY_BIN}" | sed 's/^#!//')"
+          sudo -n "${GWAY_PY}" - <<'PY'
+          import pprint
+
+          from gway_wire.surface.server import deploy
+
+          result = deploy(
+              fqdn="register.arthexis.com",
+              cert_email="tecnologia@gelectriic.com",
+          )
+          pprint.pp(result)
+          if not result.get("success"):
+              raise SystemExit(1)
+          PY
 
       - name: Verify live readiness and public health
         shell: bash
