@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [
-    "gway-web @ git+https://github.com/arthexis/gway-web.git@16cef256d5750d345a7cb9c6774de4fa8f8ad171",
+    "gway-web @ git+https://github.com/arthexis/gway-web.git@32ebf64e7c050c26fa48c9baf73fa5eda1063d44",
 ]
 
 [tool.setuptools]
