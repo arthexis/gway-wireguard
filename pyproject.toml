@@ -9,7 +9,9 @@ description = "Endpoint connectivity for Gway devices, with WireGuard as the fir
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-dependencies = []
+dependencies = [
+    "gway-web @ git+https://github.com/arthexis/gway-web.git@5cc18f0756e289a65f3dc2385b8af7f8fa3459a4",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
