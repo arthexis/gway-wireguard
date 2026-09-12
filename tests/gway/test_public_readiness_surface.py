@@ -35,11 +35,15 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
             "error": "",
         }
         ensure.return_value = {"success": True, "fqdn": "register.example.com"}
-        readiness.return_value = {"fqdn": "register.example.com", "ok": True, "checks": {}}
+        readiness.return_value = {
+            "fqdn": "register.example.com",
+            "ok": True,
+            "ready": True,
+            "checks": {},
+        }
 
         with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
-            env = base / "server.env"
+            env = Path(directory) / "server.env"
             env.write_text(
                 "\n".join(
                     [
@@ -55,7 +59,6 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-
             result = server.deploy(
                 fqdn="register.example.com",
                 env_file=env,
@@ -112,6 +115,34 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
         self.assertIn("public health failed", result["web"]["error"])
         self.assertEqual(restored, original)
 
+    @patch("gway_wire.surface.server.exposure_ensure")
+    @patch("gway_wire.surface.server.legacy._run_installer")
+    def test_failed_fresh_deploy_removes_new_environment(self, run_installer, ensure) -> None:
+        def install(*args, **kwargs):
+            env.write_text(
+                "GWAY_BASE_DOMAIN=example.com\n"
+                "GWAY_REGISTER_HOSTNAME=register.example.com\n"
+                "GWAY_ENROLL_BIND=127.0.0.1\n"
+                "GWAY_ENROLL_PORT=8787\n",
+                encoding="utf-8",
+            )
+            return {"success": True, "exit_code": 0, "output": "", "error": ""}
+
+        ensure.side_effect = RuntimeError("public health failed")
+        with tempfile.TemporaryDirectory() as directory:
+            env = Path(directory) / "server.env"
+            run_installer.side_effect = install
+            result = server.deploy(
+                fqdn="register.example.com",
+                env_file=env,
+                require_dns=False,
+                cert_email="ops@example.com",
+            )
+            exists_after = env.exists()
+
+        self.assertFalse(result["success"])
+        self.assertFalse(exists_after)
+
     def test_wireguard_check_detects_missing_tooling(self) -> None:
         with patch("gway_wire.surface.server.shutil.which", return_value=None):
             result = server._wireguard({"GWAY_WG_INTERFACE": "gway"})
@@ -120,7 +151,10 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
 
     def test_udp_listener_check_detects_missing_port(self) -> None:
         observed = subprocess.CompletedProcess(
-            ["ss", "-lun"], 0, stdout="State Recv-Q Send-Q Local Address:Port\n", stderr=""
+            ["ss", "-lun"],
+            0,
+            stdout="State Recv-Q Send-Q Local Address:Port\n",
+            stderr="",
         )
         with (
             patch("gway_wire.surface.server.shutil.which", return_value="/usr/bin/ss"),
@@ -130,6 +164,14 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(result["protocol"], "udp")
         self.assertEqual(result["port"], 51820)
+
+    def test_invalid_ports_return_failed_checks_instead_of_raising(self) -> None:
+        listener = server._listener({"GWAY_WG_PORT": "not-a-port"})
+        enrollment = server._enrollment({"GWAY_ENROLL_PORT": "70000"}, 1.0)
+        self.assertFalse(listener["ok"])
+        self.assertIn("integer port", listener["detail"])
+        self.assertFalse(enrollment["ok"])
+        self.assertIn("between 1 and 65535", enrollment["detail"])
 
     def test_enrollment_check_detects_missing_loopback_health(self) -> None:
         with patch("gway_wire.surface.server.urlopen", side_effect=OSError("refused")):
@@ -172,14 +214,13 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
             env.write_text(
                 "GWAY_BASE_DOMAIN=example.com\n"
                 "GWAY_REGISTER_HOSTNAME=register.example.com\n"
-                "GWAY_DNS_PROVIDER=none\n",
+                "GWAY_DNS_PROVIDER=godaddy\n",
                 encoding="utf-8",
             )
-            result = server.check(
-                fqdn="register.example.com", env_file=env, require_dns=False
-            )
+            result = server.check(fqdn="register.example.com", env_file=env)
 
         self.assertFalse(result["ok"])
+        self.assertFalse(result["ready"])
         self.assertEqual(
             set(result["checks"]),
             {
@@ -238,6 +279,7 @@ class PublicReadinessSurfaceTests(unittest.TestCase):
             result = server.check(fqdn="register.example.com", env_file=env)
 
         self.assertTrue(result["ok"])
+        self.assertTrue(result["ready"])
         self.assertEqual(result["checks"]["peers"]["count"], 0)
 
     def test_status_reports_exact_public_fqdn(self) -> None:
